@@ -16,8 +16,8 @@
 #include "httpd_back.h"
 #include "config.h"
 
-#define EXAMPLE_WIFI_SSID "mitte WiFi"
-#define EXAMPLE_WIFI_PASS "Flash2016"
+#define EXAMPLE_WIFI_SSID "some WiFi"
+#define EXAMPLE_WIFI_PASS "some pass"
 #if 0
 static config_t default_config = 
 {

@@ -49,7 +49,11 @@ esp_err_t config_load(config_t *config)
 	    }
 	} while(0);
 
-    nvs_close(handle);
+	nvs_close(handle);
+	if (strlen(config->ssid) == 0)
+	{
+		err = ESP_FAIL;
+	}
     return err;
 }
 

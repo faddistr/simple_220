@@ -16,8 +16,8 @@
 #include "httpd_back.h"
 #include "config.h"
 
-#define EXAMPLE_WIFI_SSID "some WiFi"
-#define EXAMPLE_WIFI_PASS "some pass"
+#define EXAMPLE_WIFI_SSID "trash WiFi"
+#define EXAMPLE_WIFI_PASS "Flash2016"
 #if 0
 static config_t default_config = 
 {
@@ -36,6 +36,12 @@ static bool is_config = false;
 
 static void smartconfig_task(void * parm);
 static void sc_callback(smartconfig_status_t status, void *pdata);
+
+static void save_password_cb(char *new_password)
+{
+    strncpy(config.user_pass, new_password, HTTPD_MAX_PASSWORD);
+    config_save(&config);
+}
 
 static esp_err_t event_handler(void *ctx, system_event_t *event)
 {
@@ -62,7 +68,7 @@ static esp_err_t event_handler(void *ctx, system_event_t *event)
 
             /* Start the web server */
             if (*server == NULL) {
-                *server = httpd_start_webserver();
+                *server = httpd_start_webserver(config.user_pass, save_password_cb);
             }
             break;
 

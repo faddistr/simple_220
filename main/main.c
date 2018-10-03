@@ -12,12 +12,15 @@
 #include <esp_system.h>
 #include <nvs_flash.h>
 #include <sys/param.h>
+#include <driver/gpio.h>
 
 #include "httpd_back.h"
 #include "config.h"
 
-#define EXAMPLE_WIFI_SSID "trash WiFi"
-#define EXAMPLE_WIFI_PASS "Flash2016"
+#define CONFIG_BUTTON 25U
+
+#define EXAMPLE_WIFI_SSID ""
+#define EXAMPLE_WIFI_PASS "trash"
 #if 0
 static config_t default_config = 
 {
@@ -36,6 +39,20 @@ static bool is_config = false;
 
 static void smartconfig_task(void * parm);
 static void sc_callback(smartconfig_status_t status, void *pdata);
+
+static bool check_button_press(void)
+{
+    gpio_config_t button_conf = {
+        .intr_type = GPIO_PIN_INTR_DISABLE,
+        .mode = GPIO_MODE_INPUT,
+        .pin_bit_mask = 1ULL<<CONFIG_BUTTON,
+        .pull_down_en = 0,
+        .pull_up_en = 0,
+    };
+
+    gpio_config(&button_conf);
+    return gpio_get_level(CONFIG_BUTTON);
+}
 
 static void save_password_cb(char *new_password)
 {
@@ -165,16 +182,24 @@ static void initialise_wifi(void *arg)
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
     ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    if (config_load(&config) != ESP_OK)
+    if (!check_button_press())
     {
-        ESP_LOGI(TAG, "Failed to load config...");
+        if (config_load(&config) != ESP_OK)
+        {
+            ESP_LOGI(TAG, "Failed to load config...");
+        } else
+        {
+            ESP_LOGI(TAG, "Setting WiFi configuration SSID %s...", wifi_config.sta.ssid);
+            strncpy((char *)wifi_config.sta.ssid, config.ssid, MAX_CONFIG_SSID);
+            strncpy((char *)wifi_config.sta.password, config.password, MAX_CONFIG_PASSWORD);
+            ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
+            is_config = true;
+        }
     } else
     {
-        ESP_LOGI(TAG, "Setting WiFi configuration SSID %s...", wifi_config.sta.ssid);
-        strncpy((char *)wifi_config.sta.ssid, config.ssid, MAX_CONFIG_SSID);
-        strncpy((char *)wifi_config.sta.password, config.password, MAX_CONFIG_PASSWORD);
-        ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
-        is_config = true;
+        config_t null_config = {};
+        ESP_LOGI(TAG, "Erasing config...");
+        config_save(&null_config);
     }
 
     ESP_ERROR_CHECK(esp_wifi_start());

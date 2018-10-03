@@ -2,12 +2,13 @@
 #include <driver/gpio.h>
 #include "plug.h"
 
+#define PLUG_SET_DEF_VAL 1
 #define PLUG_KEYS_DEF_VAL 1U
 
-#define GPIO_KEY_0 12
-#define GPIO_KEY_1 14
+#define GPIO_KEY_0 14
+#define GPIO_KEY_1 27
 #define GPIO_KEY_2 26
-#define GPIO_KEY_3 27
+#define GPIO_KEY_3 12
 
 #define KEY_GPIO_OUTPUT_PIN_SEL ((1ULL<<GPIO_KEY_0) | (1ULL<<GPIO_KEY_1) | (1ULL<<GPIO_KEY_2) | (1ULL<<GPIO_KEY_3))
 
@@ -42,8 +43,9 @@ void plug_deinit(void)
 
 static void init_keys(void)
 {
+#ifdef PLUG_SET_DEF_VAL
 	uint32_t i;
-
+#endif
 	gpio_config_t io_conf = {
 	    .intr_type = GPIO_PIN_INTR_DISABLE,
 	    .mode = GPIO_MODE_OUTPUT,
@@ -53,9 +55,10 @@ static void init_keys(void)
 	};
 
     gpio_config(&io_conf);
-
+#ifdef PLUG_SET_DEF_VAL
     for (i = 0; i < PLUG_KEY_NUM; i++)
     {
     	gpio_set_level(plug_keys[i], PLUG_KEYS_DEF_VAL);
     }
+#endif
 }

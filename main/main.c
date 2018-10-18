@@ -19,9 +19,9 @@
 
 #define CONFIG_BUTTON 25U
 
-#define EXAMPLE_WIFI_SSID ""
-#define EXAMPLE_WIFI_PASS "trash"
-#if 0
+#define EXAMPLE_WIFI_SSID "mitte WiFi"
+#define EXAMPLE_WIFI_PASS "Flash2016"
+#if 1
 static config_t default_config = 
 {
     .ssid = EXAMPLE_WIFI_SSID,
@@ -216,7 +216,7 @@ void app_main()
         err = nvs_flash_init();
     }
     ESP_ERROR_CHECK( err );
-#if 0
+#if 1
     config_save(&default_config);
 #endif
     initialise_wifi(&server);

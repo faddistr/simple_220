@@ -5,10 +5,10 @@
 #define PLUG_SET_DEF_VAL 1
 #define PLUG_KEYS_DEF_VAL 1U
 
-#define GPIO_KEY_0 14
-#define GPIO_KEY_1 27
-#define GPIO_KEY_2 26
-#define GPIO_KEY_3 12
+#define GPIO_KEY_0 13
+#define GPIO_KEY_1 12
+#define GPIO_KEY_2 14
+#define GPIO_KEY_3 27
 
 #define KEY_GPIO_OUTPUT_PIN_SEL ((1ULL<<GPIO_KEY_0) | (1ULL<<GPIO_KEY_1) | (1ULL<<GPIO_KEY_2) | (1ULL<<GPIO_KEY_3))
 

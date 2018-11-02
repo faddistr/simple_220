@@ -6,7 +6,7 @@
 
 static const char *TAG="httpd_back";
 
-#define HTTPD_MAX_OTA_URL 256U
+#define HTTPD_MAX_OTA_URL 128U
 
 static char *user_pass = NULL;
 static httpd_change_password_cb_t chg_pass_cb;
@@ -281,7 +281,7 @@ httpd_handle_t httpd_start_webserver(char *password, httpd_change_password_cb_t 
     httpd_handle_t server = NULL;
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
 
-    ESP_LOGI(TAG, "Fuck you!!!!Starting server on port: '%d'", config.server_port);
+    ESP_LOGI(TAG, "Starting server on port: '%d'", config.server_port);
     if (httpd_start(&server, &config) == ESP_OK) {
         user_pass = strdup(password);
         chg_pass_cb = change_pass_cb;

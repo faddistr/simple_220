@@ -3,8 +3,9 @@
 
 #include <esp_err.h>
 #include "httpd_back.h"
-#define MAX_CONFIG_SSID 64U
-#define MAX_CONFIG_PASSWORD 64U
+#include "telegram.h"
+#define MAX_CONFIG_SSID 32U
+#define MAX_CONFIG_PASSWORD 16U
 
 
 typedef struct 
@@ -12,6 +13,7 @@ typedef struct
 	char ssid[MAX_CONFIG_SSID + 1];
 	char password[MAX_CONFIG_PASSWORD + 1];
 	char user_pass[HTTPD_MAX_PASSWORD + 1];
+	char telegram_token[TELEGRAM_MAX_TOKEN_LEN + 1];
 } config_t;
 
 

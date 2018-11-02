@@ -15,6 +15,7 @@
 #include <driver/gpio.h>
 
 #include "httpd_back.h"
+#include "telegram.h"
 #include "config.h"
 
 #define CONFIG_BUTTON 25U
@@ -26,6 +27,7 @@ static config_t default_config =
 {
     .ssid = EXAMPLE_WIFI_SSID,
     .password = EXAMPLE_WIFI_PASS,
+    .telegram_token = "6",
 };
 #endif
 static const int CONNECTED_BIT = BIT0;
@@ -42,7 +44,7 @@ static void sc_callback(smartconfig_status_t status, void *pdata);
 
 static bool check_button_press(void)
 {
-    gpio_config_t button_conf = {
+    static const gpio_config_t button_conf = {
         .intr_type = GPIO_PIN_INTR_DISABLE,
         .mode = GPIO_MODE_INPUT,
         .pin_bit_mask = 1ULL<<CONFIG_BUTTON,
@@ -82,10 +84,11 @@ static esp_err_t event_handler(void *ctx, system_event_t *event)
             ESP_LOGI(TAG, "Got IP: '%s'",
                     ip4addr_ntoa(&event->event_info.got_ip.ip_info.ip));
             xEventGroupSetBits(s_wifi_event_group, CONNECTED_BIT);
+            telegram_init(config.telegram_token);
 
             /* Start the web server */
             if (*server == NULL) {
-                *server = httpd_start_webserver(config.user_pass, save_password_cb);
+               // *server = httpd_start_webserver(config.user_pass, save_password_cb);
             }
             break;
 
@@ -219,5 +222,6 @@ void app_main()
 #if 1
     config_save(&default_config);
 #endif
+     
     initialise_wifi(&server);
 }

@@ -27,7 +27,7 @@ static config_t default_config =
 {
     .ssid = EXAMPLE_WIFI_SSID,
     .password = EXAMPLE_WIFI_PASS,
-    .telegram_token = "6",
+    .telegram_token = "695606106:AAGwCJRw6Y6xCXPTITX7Y8zGM70rg6O-Cyo",
 };
 #endif
 static const int CONNECTED_BIT = BIT0;
@@ -38,6 +38,7 @@ static const char *TAG="MAIN";
 static EventGroupHandle_t s_wifi_event_group;
 static config_t config;
 static bool is_config = false;
+static void *teleCtx;
 
 static void smartconfig_task(void * parm);
 static void sc_callback(smartconfig_status_t status, void *pdata);
@@ -62,6 +63,12 @@ static void save_password_cb(char *new_password)
     config_save(&config);
 }
 
+static void telegram_new_message(void *teleCtx, double chat_id, const char *from, const char *text)
+{
+    ESP_LOGI(TAG, "New message: FROM: %s TEXT %s CHAT ID %f", from, text, chat_id);
+    telegram_send_text_message(teleCtx, chat_id, text);
+}
+
 static esp_err_t event_handler(void *ctx, system_event_t *event)
 {
     httpd_handle_t *server = (httpd_handle_t *) ctx;
@@ -84,11 +91,11 @@ static esp_err_t event_handler(void *ctx, system_event_t *event)
             ESP_LOGI(TAG, "Got IP: '%s'",
                     ip4addr_ntoa(&event->event_info.got_ip.ip_info.ip));
             xEventGroupSetBits(s_wifi_event_group, CONNECTED_BIT);
-            telegram_init(config.telegram_token);
+            teleCtx = telegram_init(config.telegram_token, telegram_new_message);
 
             /* Start the web server */
             if (*server == NULL) {
-               // *server = httpd_start_webserver(config.user_pass, save_password_cb);
+                *server = httpd_start_webserver(config.user_pass, save_password_cb);
             }
             break;
 
@@ -102,6 +109,7 @@ static esp_err_t event_handler(void *ctx, system_event_t *event)
                 httpd_stop_webserver(*server);
                 *server = NULL;
             }
+            telegram_stop(teleCtx);
             break;
         default:
             break;
@@ -207,6 +215,7 @@ static void initialise_wifi(void *arg)
 
     ESP_ERROR_CHECK(esp_wifi_start());
 }
+
 
 void app_main()
 {

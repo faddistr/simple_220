@@ -10,26 +10,21 @@
 #define TELEGRAM_MAX_PATH 128U
 #define TELEGRAM_MAX_BUFFER 4095U
 
-bool is_timer = false;
-
 #define TIMER_INTERVAL_MSEC    (1L * 5L * 1000L)
 
-
-typedef struct telegram_ctx
+typedef struct
 {
     char *token;	
-    char bot_name[16];
 	char path[TELEGRAM_MAX_PATH + 1];
 	int32_t last_update_id;
 	bool stop;
 	esp_http_client_config_t httpClientCfg;
 	TimerHandle_t timer;
+	bool is_timer;
+	telegram_on_msg_cb_t on_msg_cb;
 } telegram_ctx_t;
 
-
 static const char *TAG="telegram";
-
-static telegram_ctx_t teleCtx;
 
 static esp_err_t telegram_http_event_handler(esp_http_client_event_t *evt)
 {
@@ -60,35 +55,8 @@ static esp_err_t telegram_http_event_handler(esp_http_client_event_t *evt)
     return ESP_OK;
 }
 
-static void telegram_send_text_message(double chat_id, const char *message)
-{
-	int content_length;
-	esp_err_t err;
-	char *payload = calloc(sizeof(char), strlen(message) + 64); /* TODO */
-	esp_http_client_handle_t client = esp_http_client_init(&teleCtx.httpClientCfg);
 
-	sprintf(teleCtx.path, TELEGRAM_SERVER"/bot%s/sendMessage", teleCtx.token);
-	sprintf(payload, "{\"chat_id\": \"%f\", \"text\": \"%s:%s\"}", chat_id, teleCtx.bot_name, message);
-    ESP_LOGI(TAG, "Send message: %s", payload);
-
-
-	esp_http_client_set_url(client, teleCtx.path);
-	esp_http_client_set_header(client, "Content-Type", "application/json");
-    esp_http_client_set_method(client, HTTP_METHOD_POST);
-	esp_http_client_set_post_field(client, payload, strlen(payload));
-	esp_http_client_perform(client);
-	esp_http_client_close(client);
-	esp_http_client_cleanup(client);
-	free(payload);
-}
-
-static void telegram_new_message(double chat_id, const char *from, const char *text)
-{
-	ESP_LOGI(TAG, "New message: FROM: %s TEXT %s CHAT ID %f", from, text, chat_id);
-	telegram_send_text_message(chat_id, text);
-}
-
-static void telegram_process_messages(cJSON *messages)
+static void telegram_process_messages(telegram_ctx_t *teleCtx, cJSON *messages)
 {
 	uint32_t i;
 	cJSON *update_id;
@@ -99,8 +67,8 @@ static void telegram_process_messages(cJSON *messages)
 		cJSON *subitem = cJSON_GetArrayItem(messages, i);
 
 		update_id = cJSON_GetObjectItem(subitem, "update_id");
-		teleCtx.last_update_id = update_id->valueint;
-		ESP_LOGI(TAG, "Update id %d", teleCtx.last_update_id);
+		teleCtx->last_update_id = update_id->valueint;
+		ESP_LOGI(TAG, "Update id %d", teleCtx->last_update_id);
 
 		channel_post = cJSON_GetObjectItem(subitem, "channel_post");
 		if (channel_post == NULL)
@@ -116,13 +84,13 @@ static void telegram_process_messages(cJSON *messages)
 
 			if (text != NULL)
 			{
-				telegram_new_message(chat_id->valuedouble, chat_title->valuestring, text->valuestring);
+				teleCtx->on_msg_cb(teleCtx, chat_id->valuedouble, chat_title->valuestring, text->valuestring);
 			}
 		} 
 	}
 }
 
-static void telegram_parse_messages(const char *buffer)
+static void telegram_parse_messages(telegram_ctx_t *teleCtx, const char *buffer)
 {
 	cJSON *json = cJSON_Parse(buffer);
 	cJSON *ok_item = cJSON_GetObjectItem(json, "ok");
@@ -132,14 +100,14 @@ static void telegram_parse_messages(const char *buffer)
 		cJSON *messages = cJSON_GetObjectItem(json, "result");
 		if (cJSON_IsArray(messages))
 		{
-			telegram_process_messages(messages);
+			telegram_process_messages(teleCtx, messages);
 		}
 	}
 
 	cJSON_Delete(json);
 }
 
-static void telegram_getMessages(void)
+static void telegram_getMessages(telegram_ctx_t *teleCtx)
 {
 	char post_data[32];
 	char *buffer = NULL;
@@ -150,24 +118,25 @@ static void telegram_getMessages(void)
 	esp_http_client_handle_t client;
 
 
-	if (teleCtx.last_update_id)
+	if (teleCtx->last_update_id)
 	{
-		sprintf(post_data, "limit=10&offset=%d", teleCtx.last_update_id + 1);
+		sprintf(post_data, "limit=10&offset=%d", teleCtx->last_update_id + 1);
 	} else
 	{
 		sprintf(post_data, "limit=10");
 	}
-	client = esp_http_client_init(&teleCtx.httpClientCfg);
+
+	client = esp_http_client_init(&teleCtx->httpClientCfg);
 	if (client  == NULL)
 	{
 		ESP_LOGE(TAG, "Failed to initialise HTTP connection");
 		return;
 	}
-	sprintf(teleCtx.path, TELEGRAM_SERVER"/bot%s/getUpdates?%s", teleCtx.token, post_data);
-	esp_http_client_set_url(client, teleCtx.path);
+	sprintf(teleCtx->path, TELEGRAM_SERVER"/bot%s/getUpdates?%s", teleCtx->token, post_data);
+	esp_http_client_set_url(client, teleCtx->path);
     esp_http_client_set_method(client, HTTP_METHOD_GET);
 
-	ESP_LOGI(TAG, "open... %s PDATA %s\r\n", teleCtx.path, post_data);
+	ESP_LOGI(TAG, "open... %s PDATA %s\r\n", teleCtx->path, post_data);
     err = esp_http_client_open(client, 0);
     if (err == ESP_OK) {
     	esp_http_client_fetch_headers(client);
@@ -206,6 +175,7 @@ static void telegram_getMessages(void)
             break;
         }
     }
+    
     esp_http_client_close(client);
     esp_http_client_cleanup(client);
 
@@ -213,51 +183,108 @@ static void telegram_getMessages(void)
 
  	if (data_read >= 0)
  	{
- 		telegram_parse_messages(buffer);
+ 		telegram_parse_messages(teleCtx, buffer);
  	}
+
  	free(buffer);
 }
 
 static void telegram_timer_cb(TimerHandle_t pxTimer) 
 {
-	is_timer = true;
+	telegram_ctx_t *teleCtx = (telegram_ctx_t *)pvTimerGetTimerID(pxTimer);
+	
+	teleCtx->is_timer = true;
 }
 
-static void telegram_task(void * parm)
+static void telegram_task(void * param)
 {
-    ESP_LOGI(TAG, "Start... %s", 	teleCtx.token );
+	telegram_ctx_t *teleCtx = (telegram_ctx_t *)param;
 
-	teleCtx.timer = xTimerCreate("TelegramTimer", TIMER_INTERVAL_MSEC / portTICK_RATE_MS,
-        pdTRUE, NULL, telegram_timer_cb);
-	xTimerStart(teleCtx.timer, 0);
+    ESP_LOGI(TAG, "Start... %s", 	teleCtx->token );
+	teleCtx->timer = xTimerCreate("TelegramTimer", TIMER_INTERVAL_MSEC / portTICK_RATE_MS,
+        pdTRUE, teleCtx, telegram_timer_cb);
+	xTimerStart(teleCtx->timer, 0);
 
-	while(!teleCtx.stop)
+	while(!teleCtx->stop)
 	{
-		if(is_timer)
+		if(teleCtx->is_timer)
 		{
-			telegram_getMessages();
-			is_timer = false;
+			telegram_getMessages(teleCtx);
+			teleCtx->is_timer = false;
 		}
 		vTaskDelay(1);
 	}
 
-	free(teleCtx.token);
+	free(teleCtx->token);
 }
 
-void telegram_stop(void)
+void telegram_stop(void *teleCtx_ptr)
 {
-	teleCtx.stop = true;	
+	telegram_ctx_t *teleCtx = NULL;
+
+	if (teleCtx_ptr == NULL)
+	{
+		return;
+	}
+
+	teleCtx = (telegram_ctx_t *)teleCtx_ptr;
+
+	teleCtx->stop = true;	
 }
 
-void telegram_init(const char *token)
+void *telegram_init(const char *token, telegram_on_msg_cb_t on_msg_cb)
 {
-	teleCtx.token = strdup(token);
-	snprintf(teleCtx.bot_name, sizeof(teleCtx.bot_name), "smart_220");
-	teleCtx.httpClientCfg.event_handler = telegram_http_event_handler;
-	teleCtx.httpClientCfg.url = teleCtx.path;
-	teleCtx.httpClientCfg.timeout_ms = 5000;
-	teleCtx.stop = false;
+	telegram_ctx_t *teleCtx = NULL;
 
-	sprintf(teleCtx.path, TELEGRAM_SERVER"/bot%s/getUpdates", teleCtx.token);
-	xTaskCreate(&telegram_task, "telegram_task", 8192, NULL, 5, NULL);
+	if (on_msg_cb == NULL)
+	{
+		return NULL;
+	} 
+
+	teleCtx = calloc(1, sizeof(telegram_ctx_t));
+	if (teleCtx != NULL)
+	{
+		teleCtx->token = strdup(token);
+		teleCtx->httpClientCfg.event_handler = telegram_http_event_handler;
+		teleCtx->httpClientCfg.url = teleCtx->path;
+		teleCtx->httpClientCfg.timeout_ms = 5000;
+		teleCtx->on_msg_cb = on_msg_cb;
+	}
+
+	sprintf(teleCtx->path, TELEGRAM_SERVER"/bot%s/getUpdates", teleCtx->token);
+	xTaskCreate(&telegram_task, "telegram_task", 8192, teleCtx, 5, NULL);
+
+	return teleCtx;
+}
+
+void telegram_send_text_message(void *teleCtx_ptr, double chat_id, const char *message)
+{
+	int content_length;
+	esp_err_t err;
+	esp_http_client_handle_t client;
+	char *payload = NULL;
+	telegram_ctx_t *teleCtx = NULL;
+
+	if (teleCtx_ptr == NULL)
+	{
+		return;
+	}
+
+	teleCtx = (telegram_ctx_t *)teleCtx_ptr;
+	payload = calloc(sizeof(char), strlen(message) + 64); /* TODO */
+    client = esp_http_client_init(&teleCtx->httpClientCfg);
+
+	sprintf(teleCtx->path, TELEGRAM_SERVER"/bot%s/sendMessage", teleCtx->token);
+	sprintf(payload, "{\"chat_id\": \"%f\", \"text\": \"%s\"}", chat_id, message);
+    ESP_LOGI(TAG, "Send message: %s", payload);
+
+
+	esp_http_client_set_url(client, teleCtx->path);
+	esp_http_client_set_header(client, "Content-Type", "application/json");
+    esp_http_client_set_method(client, HTTP_METHOD_POST);
+	esp_http_client_set_post_field(client, payload, strlen(payload));
+	esp_http_client_perform(client);
+	esp_http_client_close(client);
+	esp_http_client_cleanup(client);
+	free(payload);
 }

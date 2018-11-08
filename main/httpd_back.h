@@ -1,6 +1,6 @@
 #ifndef HTTPD_BACK_H
 #define HTTPD_BACK_H
-#include <http_server.h>
+#include <esp_http_server.h>
 #define HTTPD_MAX_PASSWORD 16U
 
 typedef void (*httpd_change_password_cb_t)(char *new_pass);

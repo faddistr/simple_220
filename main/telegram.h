@@ -7,4 +7,5 @@
 
 
 void telegram_init(const char *token);
+void telegram_stop(void);
 #endif // TELEGRAM_H

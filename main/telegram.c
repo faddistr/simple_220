@@ -192,7 +192,6 @@ static void telegram_getMessages(telegram_ctx_t *teleCtx)
 static void telegram_timer_cb(TimerHandle_t pxTimer) 
 {
 	telegram_ctx_t *teleCtx = (telegram_ctx_t *)pvTimerGetTimerID(pxTimer);
-	
 	teleCtx->is_timer = true;
 }
 
@@ -257,7 +256,7 @@ void *telegram_init(const char *token, telegram_on_msg_cb_t on_msg_cb)
 	return teleCtx;
 }
 
-void telegram_send_text_message(void *teleCtx_ptr, double chat_id, const char *message)
+static void telegram_send_message(void *teleCtx_ptr, double chat_id, const char *message, const char *additional_json)
 {
 	int content_length;
 	esp_err_t err;
@@ -271,11 +270,17 @@ void telegram_send_text_message(void *teleCtx_ptr, double chat_id, const char *m
 	}
 
 	teleCtx = (telegram_ctx_t *)teleCtx_ptr;
-	payload = calloc(sizeof(char), strlen(message) + 64); /* TODO */
+	payload = calloc(sizeof(char), strlen(message) + 64 + strlen(additional_json)); /* TODO */
     client = esp_http_client_init(&teleCtx->httpClientCfg);
 
 	sprintf(teleCtx->path, TELEGRAM_SERVER"/bot%s/sendMessage", teleCtx->token);
-	sprintf(payload, "{\"chat_id\": \"%f\", \"text\": \"%s\"}", chat_id, message);
+	if (additional_json == NULL)
+	{
+		sprintf(payload, "{\"chat_id\": \"%f\", \"text\": \"%s\"}", chat_id, message);
+	} else
+	{
+		sprintf(payload, "{\"chat_id\": \"%f\", \"text\": \"%s\", %s}", chat_id, message, additional_json);
+	}
     ESP_LOGI(TAG, "Send message: %s", payload);
 
 
@@ -287,4 +292,48 @@ void telegram_send_text_message(void *teleCtx_ptr, double chat_id, const char *m
 	esp_http_client_close(client);
 	esp_http_client_cleanup(client);
 	free(payload);
+}
+
+static char *telegram_make_markup_kbrd(telegram_kbrd_markup_t *kbrd)
+{
+	return NULL;
+}
+
+static char *telegram_make_inline_kbrd(telegram_kbrd_inline_t *kbrd)
+{
+	return NULL;
+}
+
+void telegram_kbrd(void *teleCtx_ptr, double chat_id, const char *message, telegram_kbrd_t *kbrd)
+{
+	char *json_res = NULL;
+
+	if ((kbrd == NULL) || (teleCtx_ptr == NULL))
+	{
+		ESP_LOGE(TAG, "ARG is NULL");
+		return;
+	}
+
+	switch (kbrd->type)
+	{
+		case TELEGRAM_KBRD_MARKUP:
+			json_res = telegram_make_markup_kbrd(&kbrd->kbrd.markup);
+			break;
+
+		case TELEGRAM_KBRD_INLINE:
+			json_res = telegram_make_inline_kbrd(&kbrd->kbrd.inl);
+			break;
+
+		default:
+			ESP_LOGE(TAG, "Bad keyboard type");
+			return;
+	}
+
+	telegram_send_message(teleCtx_ptr, chat_id, message, json_res);
+	free(json_res);
+}
+
+void telegram_send_text_message(void *teleCtx_ptr, double chat_id, const char *message)
+{
+	telegram_send_message(teleCtx_ptr, chat_id, message, NULL);
 }

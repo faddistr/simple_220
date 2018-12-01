@@ -10,6 +10,7 @@
 
 static void telegram_free_user(telegram_user_t *user);
 static void telegram_free_chat(telegram_chat_t *chat);
+static void telegram_free_file(telegram_document_t *file);
 static void telegram_free_message(telegram_chat_message_t *msg);
 static void telegram_free_callback_query(telegram_chat_callback_t *query);
 static telegram_chat_type_t telegram_get_chat_type(const char *strType);
@@ -26,7 +27,29 @@ static void telegram_free_user(telegram_user_t *user)
 
 static void telegram_free_chat(telegram_chat_t *chat)
 {
+	if (chat == NULL)
+	{
+		return;
+	}
+
+	telegram_free_message(chat->pinned_message);
 	free(chat);
+}
+
+static void telegram_free_photosize(telegram_photosize_t *file)
+{
+	free(file);
+}
+
+static void telegram_free_file(telegram_document_t *file)
+{
+	if (file == NULL)
+	{
+		return;
+	}
+
+	telegram_free_photosize(file->thumb);
+	free(file);
 }
 
 static void telegram_free_message(telegram_chat_message_t *msg)
@@ -40,6 +63,8 @@ static void telegram_free_message(telegram_chat_message_t *msg)
 	telegram_free_user(msg->forward_from);
 	telegram_free_chat(msg->chat);
 	telegram_free_chat(msg->forward_from_chat);
+	telegram_free_message(msg->reply_to_message);
+	telegram_free_file(msg->file);
 	free(msg);
 }
 
@@ -109,7 +134,93 @@ static telegram_chat_t *telegram_parse_chat(cJSON *subitem)
 		chat->type = telegram_get_chat_type(val->valuestring);
 	}
 
+	val = cJSON_GetObjectItem(subitem, "pinned_message");
+	if (val != NULL)
+	{
+		chat->pinned_message = telegram_parse_message(val);
+	}
+
 	return chat;
+}
+
+static telegram_photosize_t *telegram_parse_photosize(cJSON *subitem)
+{
+	cJSON *val = NULL;
+	telegram_photosize_t *photosize = calloc(1, sizeof(telegram_photosize_t));
+
+	if (photosize == NULL)
+	{
+		return NULL;
+	}
+
+	val = cJSON_GetObjectItem(subitem, "file_id");
+	if (val != NULL)
+	{
+		photosize->id = val->valuestring;
+	}
+
+	val = cJSON_GetObjectItem(subitem, "width");
+	if (val != NULL)
+	{
+		photosize->width = val->valuedouble;
+	}
+
+	val = cJSON_GetObjectItem(subitem, "height");
+	if (val != NULL)
+	{
+		photosize->height = val->valuedouble;
+	}
+
+	val = cJSON_GetObjectItem(subitem, "file_size");
+	if (val != NULL)
+	{
+		photosize->file_size = val->valuedouble;
+	}
+
+	return photosize;
+}
+
+static telegram_document_t *telegram_parse_file(cJSON *subitem)
+{
+	cJSON *val = NULL;
+	telegram_document_t *file = calloc(1, sizeof(telegram_parse_file));
+
+	if (file == NULL)
+	{
+		return NULL;
+	}
+
+	val = cJSON_GetObjectItem(subitem, "file_id");
+	if (val != NULL)
+	{
+		file->id = val->valuestring;
+	}
+
+	val = cJSON_GetObjectItem(subitem, "thumb");
+	if (val != NULL)
+	{
+		file->thumb = telegram_parse_photosize(val);
+	}
+
+	val = cJSON_GetObjectItem(subitem, "file_name");
+	if (val != NULL)
+	{
+		file->name = val->valuestring;
+	}
+
+	val = cJSON_GetObjectItem(subitem, "mime_type");
+	if (val != NULL)
+	{
+		file->mime_type = val->valuestring;
+	}
+
+	val = cJSON_GetObjectItem(subitem, "file_size");
+	if (val != NULL)
+	{
+		file->file_size = val->valuedouble;
+	}
+
+	return file;
 }
 
 static telegram_chat_message_t *telegram_parse_message(cJSON *subitem)
@@ -158,11 +269,58 @@ static telegram_chat_message_t *telegram_parse_message(cJSON *subitem)
 		msg->forward_from_chat = telegram_parse_chat(val);
 	}
 
+	val = cJSON_GetObjectItem(subitem, "forward_from_message_id");
+	if (val != NULL)
+	{
+		msg->forward_from_message_id = val->valuedouble;
+	}
+
+	val = cJSON_GetObjectItem(subitem, "forward_signature");
+	if (val != NULL)
+	{
+		msg->forward_signature = val->valuestring;
+	}
+
+	val = cJSON_GetObjectItem(subitem, "forward_date");
+	if (val != NULL)
+	{
+		msg->forward_date = val->valuedouble;
+	}
+
+	val = cJSON_GetObjectItem(subitem, "reply_to_message");
+	if (val != NULL)
+	{
+		msg->reply_to_message = telegram_parse_message(val);
+	}
+
+	val = cJSON_GetObjectItem(subitem, "edit_date");
+	if (val != NULL)
+	{
+		msg->edit_date = val->valuedouble;
+	}
+
+	val = cJSON_GetObjectItem(subitem, "media_group_id");
+	if (val != NULL)
+	{
+		msg->media_group_id = val->valuestring;
+	}
+
+	val = cJSON_GetObjectItem(subitem, "author_signature");
+	if (val != NULL)
+	{
+		msg->author_signature = val->valuestring;
+	}
 
 	val = cJSON_GetObjectItem(subitem, "text");
 	if (val != NULL)
 	{
 		msg->text = val->valuestring;
+	}
+
+	val = cJSON_GetObjectItem(subitem, "document");
+	if (val != NULL)
+	{
+		msg->file = telegram_parse_file(val);
 	}
 
 	return msg;

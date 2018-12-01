@@ -12,6 +12,12 @@
 
 #define TIMER_INTERVAL_MSEC    (1L * 5L * 1000L)
 
+#define TELEGRAM_INLINE_BTN_FMT "[{\"text\": \"%s\", \"callback_data\": \"%s\"}]"
+#define TELEGRAM_INLINE_KBRD_FMT "\"inline_keyboard\": "
+#define TELEGRMA_MSG_FMT "{\"chat_id\": \"%f\", \"text\": \"%s\"}"
+#define TELEGRMA_MSG_MARKUP_FMT "{\"chat_id\": \"%f\", \"text\": \"%s\", \"reply_markup\": {%s}}"
+
+
 typedef struct
 {
     char *token;	
@@ -55,12 +61,54 @@ static esp_err_t telegram_http_event_handler(esp_http_client_event_t *evt)
     return ESP_OK;
 }
 
+static void telegram_process_channel_post(telegram_ctx_t *teleCtx, cJSON *channel_post)
+{
+	cJSON *chat = cJSON_GetObjectItem(channel_post, "chat"); 
+	cJSON *chat_id = cJSON_GetObjectItem(chat, "id"); 
+	cJSON *chat_title = cJSON_GetObjectItem(chat, "title"); 
+	cJSON *text = cJSON_GetObjectItem(channel_post, "text");
+
+	if (text != NULL)
+	{
+		teleCtx->on_msg_cb(teleCtx, chat_id->valuedouble, chat_title->valuestring, text->valuestring);
+	}
+}
+
+static void telegram_process_private(telegram_ctx_t *teleCtx, cJSON *message)
+{
+	cJSON *chat = cJSON_GetObjectItem(message, "chat"); 
+	cJSON *chat_id = cJSON_GetObjectItem(chat, "id"); 
+	cJSON *chat_title = cJSON_GetObjectItem(chat, "first_name"); 
+	cJSON *text = cJSON_GetObjectItem(message, "text");
+
+	if (text != NULL)
+	{
+		teleCtx->on_msg_cb(teleCtx, chat_id->valuedouble, chat_title->valuestring, text->valuestring);
+	}
+}
+
+static void telegram_parse_message(telegram_ctx_t *teleCtx, cJSON *subitem)
+{
+	cJSON *channel_post = cJSON_GetObjectItem(subitem, "channel_post");
+	if (channel_post != NULL)
+	{
+		telegram_process_channel_post(teleCtx, channel_post);
+		return;
+	} 
+
+	channel_post = cJSON_GetObjectItem(subitem, "message");
+	if (channel_post != NULL)
+	{
+		telegram_process_private(teleCtx, channel_post);
+		return;
+	}
+}
 
 static void telegram_process_messages(telegram_ctx_t *teleCtx, cJSON *messages)
 {
 	uint32_t i;
 	cJSON *update_id;
-	cJSON *channel_post;
+
 
 	for (i = 0 ; i < cJSON_GetArraySize(messages) ; i++)
 	{
@@ -69,24 +117,7 @@ static void telegram_process_messages(telegram_ctx_t *teleCtx, cJSON *messages)
 		update_id = cJSON_GetObjectItem(subitem, "update_id");
 		teleCtx->last_update_id = update_id->valueint;
 		ESP_LOGI(TAG, "Update id %d", teleCtx->last_update_id);
-
-		channel_post = cJSON_GetObjectItem(subitem, "channel_post");
-		if (channel_post == NULL)
-		{
-			channel_post = cJSON_GetObjectItem(subitem, "private");
-		}
-		if (channel_post != NULL)
-		{
-			cJSON *chat = cJSON_GetObjectItem(channel_post, "chat"); 
-			cJSON *chat_id = cJSON_GetObjectItem(chat, "id"); 
-			cJSON *chat_title = cJSON_GetObjectItem(chat, "title"); 
-			cJSON *text = cJSON_GetObjectItem(channel_post, "text");
-
-			if (text != NULL)
-			{
-				teleCtx->on_msg_cb(teleCtx, chat_id->valuedouble, chat_title->valuestring, text->valuestring);
-			}
-		} 
+		telegram_parse_message(teleCtx, subitem);
 	}
 }
 
@@ -258,7 +289,6 @@ void *telegram_init(const char *token, telegram_on_msg_cb_t on_msg_cb)
 
 static void telegram_send_message(void *teleCtx_ptr, double chat_id, const char *message, const char *additional_json)
 {
-	int content_length;
 	esp_err_t err;
 	esp_http_client_handle_t client;
 	char *payload = NULL;
@@ -266,30 +296,64 @@ static void telegram_send_message(void *teleCtx_ptr, double chat_id, const char 
 
 	if (teleCtx_ptr == NULL)
 	{
+		ESP_LOGE(TAG, "Send message: Null argument");
 		return;
 	}
 
 	teleCtx = (telegram_ctx_t *)teleCtx_ptr;
-	payload = calloc(sizeof(char), strlen(message) + 64 + strlen(additional_json)); /* TODO */
+	payload = calloc(sizeof(char), strlen(message) + 1
+		+ ((additional_json == NULL) ? strlen(TELEGRMA_MSG_FMT) : (strlen(TELEGRMA_MSG_MARKUP_FMT) + strlen(additional_json))));
+
     client = esp_http_client_init(&teleCtx->httpClientCfg);
 
 	sprintf(teleCtx->path, TELEGRAM_SERVER"/bot%s/sendMessage", teleCtx->token);
 	if (additional_json == NULL)
 	{
-		sprintf(payload, "{\"chat_id\": \"%f\", \"text\": \"%s\"}", chat_id, message);
+		sprintf(payload, TELEGRMA_MSG_FMT, chat_id, message);
 	} else
 	{
-		sprintf(payload, "{\"chat_id\": \"%f\", \"text\": \"%s\", %s}", chat_id, message, additional_json);
-	}
+		sprintf(payload, TELEGRMA_MSG_MARKUP_FMT, chat_id, message, additional_json);
+	} 
     ESP_LOGI(TAG, "Send message: %s", payload);
 
+    do
+    {
+		err = esp_http_client_set_url(client, teleCtx->path);
+		if (err != ESP_OK)
+		{
+			ESP_LOGE(TAG, "esp_http_client_set_url failed err %d", err);
+			break;
+		}
 
-	esp_http_client_set_url(client, teleCtx->path);
-	esp_http_client_set_header(client, "Content-Type", "application/json");
-    esp_http_client_set_method(client, HTTP_METHOD_POST);
-	esp_http_client_set_post_field(client, payload, strlen(payload));
-	esp_http_client_perform(client);
-	esp_http_client_close(client);
+		err = esp_http_client_set_header(client, "Content-Type", "application/json");
+		if (err != ESP_OK)
+		{
+			ESP_LOGE(TAG, "Send message: esp_http_client_set_header failed err %d", err);
+			break;
+		}
+
+	    err = esp_http_client_set_method(client, HTTP_METHOD_POST);
+	    if (err != ESP_OK)
+		{
+			ESP_LOGE(TAG, "Send message: esp_http_client_set_method failed err %d", err);
+			break;
+		}
+
+		err = esp_http_client_set_post_field(client, payload, strlen(payload));
+		if (err != ESP_OK)
+		{
+			ESP_LOGE(TAG, "Send message: esp_http_client_set_post_field failed err %d", err);
+			break;
+		}
+
+		err= esp_http_client_perform(client);
+		if (err != ESP_OK)
+		{
+			ESP_LOGE(TAG, "Send message: esp_http_client_perform failed err %d", err);
+			break;
+		}
+	} while (0);
+
 	esp_http_client_cleanup(client);
 	free(payload);
 }
@@ -301,7 +365,45 @@ static char *telegram_make_markup_kbrd(telegram_kbrd_markup_t *kbrd)
 
 static char *telegram_make_inline_kbrd(telegram_kbrd_inline_t *kbrd)
 {
-	return NULL;
+	char *str = NULL;
+	size_t reqSize = 0;
+	size_t count = 0;
+	telegram_kbrd_inline_btn_t *btn = kbrd->buttons;
+
+	while (btn->text)
+	{
+		reqSize += strlen(btn->text) + strlen(btn->callback_data);
+		btn++;
+		count++;
+	}
+
+	if (reqSize == 0)
+	{
+		return NULL;
+	}
+
+	str = (char *)calloc(sizeof(char), reqSize + count*strlen(TELEGRAM_INLINE_BTN_FMT) + count + 1
+		+ strlen(TELEGRAM_INLINE_KBRD_FMT) + 2 + 1); //count +1 number of comas, 2 - brackets
+
+	if (str == NULL)
+	{
+		return NULL;
+	}
+
+	count = sprintf(str, TELEGRAM_INLINE_KBRD_FMT"[");
+	btn = kbrd->buttons;
+	while (btn->text)
+	{
+		count += sprintf(&str[count], TELEGRAM_INLINE_BTN_FMT, btn->text, btn->callback_data);
+		btn++;
+		if (btn->text)
+		{
+			count += sprintf(&str[count], ",");
+		}
+	}
+
+	sprintf(&str[count], "]");
+	return str;
 }
 
 void telegram_kbrd(void *teleCtx_ptr, double chat_id, const char *message, telegram_kbrd_t *kbrd)
@@ -310,7 +412,7 @@ void telegram_kbrd(void *teleCtx_ptr, double chat_id, const char *message, teleg
 
 	if ((kbrd == NULL) || (teleCtx_ptr == NULL))
 	{
-		ESP_LOGE(TAG, "ARG is NULL");
+		ESP_LOGE(TAG, "telegram_kbrd ARG is NULL");
 		return;
 	}
 

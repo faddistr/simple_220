@@ -1,7 +1,6 @@
 
 #include <string.h>
 #include <stdbool.h>
-#include <cJSON.h>
 #include <esp_log.h>
 #include <esp_http_client.h>
 #include "freertos/timers.h"
@@ -13,14 +12,13 @@
 
 #define TIMER_INTERVAL_MSEC    (1L * 5L * 1000L)
 
-#define TELEGRAM_INLINE_BTN_FMT "[{\"text\": \"%s\", \"callback_data\": \"%s\"}]"
-#define TELEGRAM_INLINE_KBRD_FMT "\"inline_keyboard\": "
+#define TELEGRAM_GET_MESSAGE_POST_DATA_FMT "limit=10"
+#define TELEGRAM_GET_MESSAGE_POST_DATA_OFFSET_FMT TELEGRAM_GET_MESSAGE_POST_DATA_FMT"&offset=%d"
+
 #define TELEGRMA_MSG_FMT "{\"chat_id\": \"%f\", \"text\": \"%s\"}"
 #define TELEGRMA_MSG_MARKUP_FMT "{\"chat_id\": \"%f\", \"text\": \"%s\", \"reply_markup\": {%s}}"
 
 static const char *TAG="telegram";
-
-static telegram_chat_message_t *telegram_parse_message(cJSON *subitem);
 
 typedef struct
 {
@@ -62,351 +60,24 @@ static esp_err_t telegram_http_event_handler(esp_http_client_event_t *evt)
     return ESP_OK;
 }
 
-static void telegram_free_user(telegram_user_t *user)
+static void telegram_process_message_int_cb(void *hnd, telegram_update_t *upd)
 {
-	free(user);
-}
+	telegram_ctx_t *teleCtx = NULL;
 
-static void telegram_free_chat(telegram_chat_t *chat)
-{
-	free(chat);
-}
-
-static void telegram_free_message(telegram_chat_message_t *msg)
-{
-	if (msg == NULL)
+	if ((hnd == NULL) || (upd == NULL))
 	{
+		ESP_LOGE(TAG, "Internal error during processing messages");
 		return;
 	}
 
-	telegram_free_user(msg->from);
-	telegram_free_user(msg->forward_from);
-	telegram_free_chat(msg->chat);
-	telegram_free_chat(msg->forward_from_chat);
-	free(msg);
-}
-
-static void telegram_free_callback_query(telegram_chat_callback_t *query)
-{
-	if (query == NULL)
-	{
-		return;
-	}
-
-	telegram_free_user(query->from);
-	telegram_free_message(query->message);
-	free(query);
-}
-
-static void telegram_free_update_info(telegram_update_t **upd)
-{
-	telegram_update_t *info = *upd;
-
-	if (*upd == NULL)
-	{
-		return;
-	}
-
-	telegram_free_message(info->message);
-	telegram_free_message(info->channel_post);
-	telegram_free_message(info->edited_message);
-	telegram_free_message(info->edited_channel_post);
-	telegram_free_callback_query(info->callback_query);
-	free(*upd);
-	*upd = NULL;
-}
-
-static telegram_user_t *telegram_parse_user(cJSON *subitem)
-{
-	cJSON *val = NULL;
-	telegram_user_t *user = calloc(1, sizeof(telegram_user_t));
-
-	if (user == NULL)
-	{
-		return NULL;
-	}
-
-	val = cJSON_GetObjectItem(subitem, "id");
-	if (val != NULL)
-	{
-		user->id = val->valuedouble;
-	}
-
-	val = cJSON_GetObjectItem(subitem, "is_bot");
-	if (val != NULL)
-	{
-		user->is_bot = (val->valueint == 1);
-	}
-
-	val = cJSON_GetObjectItem(subitem, "first_name");
-	if (val != NULL)
-	{
-		user->first_name = val->valuestring;
-	}
-
-	val = cJSON_GetObjectItem(subitem, "last_name");
-	if (val != NULL)
-	{
-		user->last_name = val->valuestring;
-	}
-
-	val = cJSON_GetObjectItem(subitem, "username");
-	if (val != NULL)
-	{
-		user->username = val->valuestring;
-	}
-
-	val = cJSON_GetObjectItem(subitem, "language_code");
-	if (val != NULL)
-	{
-		user->language_code = val->valuestring;
-	}
-
-	return user;
-}
-
-static telegram_chat_type_t telegram_get_chat_type(const char *strType)
-{
-	if (!strcmp(strType, "private"))
-	{
-		return TELEGRAM_CHAT_TYPE_PRIVATE;
-	}
-
-	if (!strcmp(strType, "channel"))
-	{
-		return TELEGRAM_CHAT_TYPE_CHAN;
-	}
-
-	if (!strcmp(strType, "group"))
-	{
-		return TELEGRAM_CHAT_TYPE_GROUP;
-	}
-
-	if (!strcmp(strType, "supergroup"))
-	{
-		return TELEGRAM_CHAT_TYPE_SUPERGROUP;
-	}
-
-	return TELEGRAM_CHAT_TYPE_UNIMPL;
-}
-
-static telegram_chat_t *telegram_parse_chat(cJSON *subitem)
-{
-	cJSON *val = NULL;
-	telegram_chat_t *chat = calloc(1, sizeof(telegram_chat_t));
-
-	if (chat == NULL)
-	{
-		return NULL;
-	}
-
-	val = cJSON_GetObjectItem(subitem, "id");
-	if (val != NULL)
-	{
-		chat->id = val->valuedouble; 
-	}
-
-	val = cJSON_GetObjectItem(subitem, "title");
-	if (val != NULL)
-	{
-		chat->title = val->valuestring; 
-	}
-
-	val = cJSON_GetObjectItem(subitem, "type");
-	if (val != NULL)
-	{
-		chat->type = telegram_get_chat_type(val->valuestring);
-	}
-
-	return chat;
-}
-
-static telegram_chat_message_t *telegram_parse_message(cJSON *subitem)
-{
-	cJSON *val = NULL;
-	telegram_chat_message_t *msg = calloc(1, sizeof(telegram_chat_message_t));
-
-	if (msg == NULL)
-	{
-		return NULL;
-	}
-
-	val = cJSON_GetObjectItem(subitem, "message_id");
-	if (val != NULL)
-	{
-		msg->id = val->valuedouble;
-	}
-
-	val = cJSON_GetObjectItem(subitem, "from");
-	if (val != NULL)
-	{
-		msg->from = telegram_parse_user(val);
-	}
-
-	val = cJSON_GetObjectItem(subitem, "date");
-	if (val != NULL)
-	{
-		msg->timestamp = val->valuedouble;
-	}
-
-	val = cJSON_GetObjectItem(subitem, "chat");
-	if (val != NULL)
-	{
-		msg->chat = telegram_parse_chat(val);
-	}
-
-	val = cJSON_GetObjectItem(subitem, "forward_from");
-	if (val != NULL)
-	{
-		msg->forward_from = telegram_parse_user(val);
-	}
-
-	val = cJSON_GetObjectItem(subitem, "forward_from_chat");
-	if (val != NULL)
-	{
-		msg->forward_from_chat = telegram_parse_chat(val);
-	}
-
-
-	val = cJSON_GetObjectItem(subitem, "text");
-	if (val != NULL)
-	{
-		msg->text = val->valuestring;
-	}
-
-	return msg;
-}
-
-static telegram_chat_callback_t *telegram_parse_callback_query(cJSON *subitem)
-{
-	cJSON *val = NULL;
-	telegram_chat_callback_t *cb = calloc(1, sizeof(telegram_chat_callback_t));
-	
-	if (cb == NULL)
-	{
-		return NULL;
-	}
-
-	val = cJSON_GetObjectItem(subitem, "id");
-	if (val != NULL)
-	{
-		cb->id = val->valuestring;
-	}
-
-	val = cJSON_GetObjectItem(subitem, "from");
-	if (val != NULL)
-	{
-		cb->from = telegram_parse_user(val);
-	}
-
-	val = cJSON_GetObjectItem(subitem, "data");
-	if (val != NULL)
-	{
-		cb->data = val->valuestring;
-	}
-
-	val = cJSON_GetObjectItem(subitem, "message");
-	if (val != NULL)
-	{
-		cb->message = telegram_parse_message(val);
-	}
-
-	return cb;
-}
-
-static telegram_update_t *telegram_parse_update(cJSON *subitem)
-{
-	telegram_update_t *upd = calloc(1, sizeof(telegram_update_t));
-	cJSON *val = NULL;
-
-	if (upd == NULL)
-	{
-		return NULL;
-	}
-
-	val = cJSON_GetObjectItem(subitem, "update_id");
-	if (val != NULL)
-	{
-		upd->id = val->valuedouble;
-	}
-
-	val = cJSON_GetObjectItem(subitem, "message");
-	if (val != NULL)
-	{
-		upd->message = telegram_parse_message(val);
-	}
-
-	val = cJSON_GetObjectItem(subitem, "edited_message");
-	if (val != NULL)
-	{
-		upd->edited_message = telegram_parse_message(val);
-	}
-
-	val = cJSON_GetObjectItem(subitem, "channel_post");
-	if (val != NULL)
-	{
-		upd->channel_post = telegram_parse_message(val);
-	}
-
-	val = cJSON_GetObjectItem(subitem, "edited_channel_post");
-	if (val != NULL)
-	{
-		upd->channel_post = telegram_parse_message(val);
-	}
-
-	val = cJSON_GetObjectItem(subitem, "callback_query");
-	if (val != NULL)
-	{
-		upd->callback_query = telegram_parse_callback_query(val);
-	}
-
-	return upd;
-}
-
-static void telegram_process_messages(telegram_ctx_t *teleCtx, cJSON *messages)
-{
-	uint32_t i;
-
-	for (i = 0 ; i < cJSON_GetArraySize(messages) ; i++)
-	{
-		cJSON *subitem = cJSON_GetArrayItem(messages, i);
-		if (subitem == NULL)
-		{
-			break;
-		}
-
-		telegram_update_t *upd = telegram_parse_update(subitem);
-		if (upd != NULL)
-		{
-			teleCtx->last_update_id = upd->id;
-		}
-
-		ESP_LOGI(TAG, "Update id %d", teleCtx->last_update_id);
-		teleCtx->on_msg_cb(teleCtx, upd);
-		telegram_free_update_info(&upd);
-	}
-}
-
-static void telegram_parse_messages(telegram_ctx_t *teleCtx, const char *buffer)
-{
-	cJSON *json = cJSON_Parse(buffer);
-	cJSON *ok_item = cJSON_GetObjectItem(json, "ok");
-
-	if (cJSON_IsBool(ok_item) && (ok_item->valueint))
-	{
-		cJSON *messages = cJSON_GetObjectItem(json, "result");
-		if (cJSON_IsArray(messages))
-		{
-			telegram_process_messages(teleCtx, messages);
-		}
-	}
-
-	cJSON_Delete(json);
+	teleCtx = (telegram_ctx_t *)hnd;
+ 	teleCtx->last_update_id = upd->id;
+ 	teleCtx->on_msg_cb(teleCtx, upd);
 }
 
 static void telegram_getMessages(telegram_ctx_t *teleCtx)
 {
-	char post_data[32];
+	char post_data[strlen(TELEGRAM_GET_MESSAGE_POST_DATA_OFFSET_FMT) + 16];
 	char *buffer = NULL;
 	int data_read = 0;
     int total_data_read = 0; 
@@ -417,10 +88,10 @@ static void telegram_getMessages(telegram_ctx_t *teleCtx)
 
 	if (teleCtx->last_update_id)
 	{
-		sprintf(post_data, "limit=10&offset=%d", teleCtx->last_update_id + 1);
+		sprintf(post_data, TELEGRAM_GET_MESSAGE_POST_DATA_OFFSET_FMT, teleCtx->last_update_id + 1);
 	} else
 	{
-		sprintf(post_data, "limit=10");
+		sprintf(post_data, TELEGRAM_GET_MESSAGE_POST_DATA_FMT);
 	}
 
 	client = esp_http_client_init(&teleCtx->httpClientCfg);
@@ -479,7 +150,7 @@ static void telegram_getMessages(telegram_ctx_t *teleCtx)
 
  	if (data_read >= 0)
  	{
- 		telegram_parse_messages(teleCtx, buffer);
+ 		telegram_parse_messages(teleCtx, buffer, telegram_process_message_int_cb);
  	}
 
  	free(buffer);
@@ -630,55 +301,6 @@ static void telegram_send_message(void *teleCtx_ptr, telegram_int_t chat_id, con
 	free(payload);
 }
 
-static char *telegram_make_markup_kbrd(telegram_kbrd_markup_t *kbrd)
-{
-	return NULL;
-}
-
-static char *telegram_make_inline_kbrd(telegram_kbrd_inline_t *kbrd)
-{
-	char *str = NULL;
-	size_t reqSize = 0;
-	size_t count = 0;
-	telegram_kbrd_inline_btn_t *btn = kbrd->buttons;
-
-	while (btn->text)
-	{
-		reqSize += strlen(btn->text) + strlen(btn->callback_data);
-		btn++;
-		count++;
-	}
-
-	if (reqSize == 0)
-	{
-		return NULL;
-	}
-
-	str = (char *)calloc(sizeof(char), reqSize + count*strlen(TELEGRAM_INLINE_BTN_FMT) + count + 1
-		+ strlen(TELEGRAM_INLINE_KBRD_FMT) + 2 + 1); //count +1 number of comas, 2 - brackets
-
-	if (str == NULL)
-	{
-		return NULL;
-	}
-
-	count = sprintf(str, TELEGRAM_INLINE_KBRD_FMT"[");
-	btn = kbrd->buttons;
-	while (btn->text)
-	{
-		count += sprintf(&str[count], TELEGRAM_INLINE_BTN_FMT, btn->text, btn->callback_data);
-		btn++;
-		if (btn->text)
-		{
-			count += sprintf(&str[count], ",");
-		}
-	}
-
-	sprintf(&str[count], "]");
-	return str;
-}
-
-
 void telegram_kbrd(void *teleCtx_ptr, telegram_int_t chat_id, const char *message, telegram_kbrd_t *kbrd)
 {
 	char *json_res = NULL;
@@ -689,23 +311,13 @@ void telegram_kbrd(void *teleCtx_ptr, telegram_int_t chat_id, const char *messag
 		return;
 	}
 
-	switch (kbrd->type)
+	json_res = telegram_make_kbrd(kbrd);
+
+	if (json_res != NULL)
 	{
-		case TELEGRAM_KBRD_MARKUP:
-			json_res = telegram_make_markup_kbrd(&kbrd->kbrd.markup);
-			break;
-
-		case TELEGRAM_KBRD_INLINE:
-			json_res = telegram_make_inline_kbrd(&kbrd->kbrd.inl);
-			break;
-
-		default:
-			ESP_LOGE(TAG, "Bad keyboard type");
-			return;
+		telegram_send_message(teleCtx_ptr, chat_id, message, json_res);
+		free(json_res);
 	}
-
-	telegram_send_message(teleCtx_ptr, chat_id, message, json_res);
-	free(json_res);
 }
 
 void telegram_send_text_message(void *teleCtx_ptr, telegram_int_t chat_id, const char *message)

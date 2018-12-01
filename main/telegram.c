@@ -116,11 +116,6 @@ static void telegram_free_update_info(telegram_update_t **upd)
 	*upd = NULL;
 }
 
-static telegram_chat_callback_t *telegram_parse_callback_query(cJSON *val)
-{
-	return NULL;
-}
-
 static telegram_user_t *telegram_parse_user(cJSON *subitem)
 {
 	cJSON *val = NULL;
@@ -280,6 +275,43 @@ static telegram_chat_message_t *telegram_parse_message(cJSON *subitem)
 	}
 
 	return msg;
+}
+
+static telegram_chat_callback_t *telegram_parse_callback_query(cJSON *subitem)
+{
+	cJSON *val = NULL;
+	telegram_chat_callback_t *cb = calloc(1, sizeof(telegram_chat_callback_t));
+	
+	if (cb == NULL)
+	{
+		return NULL;
+	}
+
+	val = cJSON_GetObjectItem(subitem, "id");
+	if (val != NULL)
+	{
+		cb->id = val->valuestring;
+	}
+
+	val = cJSON_GetObjectItem(subitem, "from");
+	if (val != NULL)
+	{
+		cb->from = telegram_parse_user(val);
+	}
+
+	val = cJSON_GetObjectItem(subitem, "data");
+	if (val != NULL)
+	{
+		cb->data = val->valuestring;
+	}
+
+	val = cJSON_GetObjectItem(subitem, "message");
+	if (val != NULL)
+	{
+		cb->message = telegram_parse_message(val);
+	}
+
+	return cb;
 }
 
 static telegram_update_t *telegram_parse_update(cJSON *subitem)

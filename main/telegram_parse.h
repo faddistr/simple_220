@@ -7,6 +7,7 @@
 
 /** Telegram int type, 52 bits, uses double for compatibility with cjson lib*/
 typedef double telegram_int_t;
+struct telegram_chat_message;
 
 /** This object represents a Telegram user or bot */
 typedef struct
@@ -36,18 +37,46 @@ typedef struct
 	telegram_int_t id; /** 	Unique identifier for this chat. */
 	const char *title; /**  Opt. Title of the chat  */ 
 	telegram_chat_type_t type; /** Type of the chat */
+	struct telegram_chat_message  *pinned_message; /** Opt. Pinned message, for supergroups and channel chats */
 } telegram_chat_t;
 
-/** This object represents a message. */
+/** This object represents one size of a photo or a file / sticker thumbnail. */
 typedef struct
+{
+	const char *id; /** Unique file identifier */
+	telegram_int_t width; /** Photo width */
+	telegram_int_t height; /** Photo height */
+	telegram_int_t file_size; /** Opt. file size */
+} telegram_photosize_t;
+
+/** This object represents a general file */
+typedef struct
+{
+	const char *id; /** Unique file identifier */
+	telegram_photosize_t *thumb; /** Opt.  Document thumbnail as defined by sender */
+	const char *name; /** Opt. Original filename as defined by sender */
+	const char *mime_type; /** Opt. MIME type of the file as defined by sender */
+	telegram_int_t file_size; /** Opt. File size */
+} telegram_document_t; 
+
+/** This object represents a message. */
+typedef struct telegram_chat_message
 {
 	telegram_int_t   id;        /** Unique message identifier inside this chat */
 	telegram_user_t  *from;     /** NULL in case of channel posts */
-	const char       *text;     /** Text of the message */
 	telegram_int_t   timestamp; /** Unix timestamp of the message */
 	telegram_chat_t  *chat;     /** Conversation the message belongs to */
 	telegram_user_t  *forward_from; /** Opt. For forwarded messages, sender of the original message */
 	telegram_chat_t  *forward_from_chat; /** Opt. For forwarded messages, chat of the original message */
+	telegram_int_t   forward_from_message_id; /** Opt. For messages forwarded from channels, identifier of the original message in the channel */
+	const char       *forward_signature; /** Opt. For messages forwarded from channels, signature of the post author if present*/
+	telegram_int_t   forward_date; /** Opt. For forwarded messages, date the original message was sent in Unix time*/
+	struct telegram_chat_message *reply_to_message; /** Opt. For replies, the original message. Note that the Message object in this field will not contain further reply_to_message fields even if it itself is a reply.*/
+	telegram_int_t   edit_date; /** Opt.  Date the message was last edited in Unix time */
+	const char       *media_group_id; /** Opt. The unique identifier of a media message group this message belongs to */
+	const char       *author_signature; /** Opt. Signature of the post author for messages in channels */
+	const char       *text;     /** Opt. Text of the message */
+	telegram_document_t *file; /** Opt. General file */
 } telegram_chat_message_t;
 
 /** This object represents an incoming callback query from a callback button in an inline keyboard. */

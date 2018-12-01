@@ -9,6 +9,7 @@
 
 #define TELEGRAM_MAX_PATH 128U
 #define TELEGRAM_MAX_BUFFER 4095U
+#define TEGLEGRAM_CHAT_ID_MAX_LEN 64U
 
 #define TIMER_INTERVAL_MSEC    (1L * 5L * 1000L)
 
@@ -17,6 +18,7 @@
 #define TELEGRMA_MSG_FMT "{\"chat_id\": \"%f\", \"text\": \"%s\"}"
 #define TELEGRMA_MSG_MARKUP_FMT "{\"chat_id\": \"%f\", \"text\": \"%s\", \"reply_markup\": {%s}}"
 
+static const char *TAG="telegram";
 
 typedef struct
 {
@@ -29,8 +31,6 @@ typedef struct
 	bool is_timer;
 	telegram_on_msg_cb_t on_msg_cb;
 } telegram_ctx_t;
-
-static const char *TAG="telegram";
 
 static esp_err_t telegram_http_event_handler(esp_http_client_event_t *evt)
 {
@@ -49,7 +49,6 @@ static esp_err_t telegram_http_event_handler(esp_http_client_event_t *evt)
             break;
         case HTTP_EVENT_ON_DATA:
             ESP_LOGI(TAG, "HTTP_EVENT_ON_DATA, len=%d", evt->data_len);
-            ESP_LOGI(TAG, "RCVD: %s\r\n", (char *)evt->data);
             break;
         case HTTP_EVENT_ON_FINISH:
             ESP_LOGI(TAG, "HTTP_EVENT_ON_FINISH");
@@ -64,10 +63,24 @@ static esp_err_t telegram_http_event_handler(esp_http_client_event_t *evt)
 static void telegram_process_channel_post(telegram_ctx_t *teleCtx, cJSON *channel_post)
 {
 	cJSON *chat = cJSON_GetObjectItem(channel_post, "chat"); 
-	cJSON *chat_id = cJSON_GetObjectItem(chat, "id"); 
-	cJSON *chat_title = cJSON_GetObjectItem(chat, "title"); 
-	cJSON *text = cJSON_GetObjectItem(channel_post, "text");
+	if (chat == NULL)
+	{
+		return;
+	}
 
+	cJSON *chat_id = cJSON_GetObjectItem(chat, "id"); 
+	if (chat_id == NULL)
+	{
+		return;
+	}
+
+	cJSON *chat_title = cJSON_GetObjectItem(chat, "title"); 
+	if (chat_title == NULL)
+	{
+		return;
+	}
+
+	cJSON *text = cJSON_GetObjectItem(channel_post, "text");
 	if (text != NULL)
 	{
 		teleCtx->on_msg_cb(teleCtx, chat_id->valuedouble, chat_title->valuestring, text->valuestring);
@@ -77,10 +90,24 @@ static void telegram_process_channel_post(telegram_ctx_t *teleCtx, cJSON *channe
 static void telegram_process_private(telegram_ctx_t *teleCtx, cJSON *message)
 {
 	cJSON *chat = cJSON_GetObjectItem(message, "chat"); 
-	cJSON *chat_id = cJSON_GetObjectItem(chat, "id"); 
-	cJSON *chat_title = cJSON_GetObjectItem(chat, "first_name"); 
-	cJSON *text = cJSON_GetObjectItem(message, "text");
+	if (chat == NULL)
+	{
+		return;
+	}
 
+	cJSON *chat_id = cJSON_GetObjectItem(chat, "id"); 
+	if (chat_id == NULL)
+	{
+		return;
+	}
+
+	cJSON *chat_title = cJSON_GetObjectItem(chat, "first_name"); 
+	if (chat_title == NULL)
+	{
+		return;
+	}
+
+	cJSON *text = cJSON_GetObjectItem(message, "text");
 	if (text != NULL)
 	{
 		teleCtx->on_msg_cb(teleCtx, chat_id->valuedouble, chat_title->valuestring, text->valuestring);
@@ -206,7 +233,6 @@ static void telegram_getMessages(telegram_ctx_t *teleCtx)
             break;
         }
     }
-    
     esp_http_client_close(client);
     esp_http_client_cleanup(client);
 
@@ -301,10 +327,17 @@ static void telegram_send_message(void *teleCtx_ptr, double chat_id, const char 
 	}
 
 	teleCtx = (telegram_ctx_t *)teleCtx_ptr;
-	payload = calloc(sizeof(char), strlen(message) + 1
+	client = esp_http_client_init(&teleCtx->httpClientCfg);
+    if (client == NULL)
+    {
+    	ESP_LOGE(TAG, "Failed to init http client");
+    	return;	
+    }
+
+	payload = calloc(sizeof(char), strlen(message) + TEGLEGRAM_CHAT_ID_MAX_LEN 
 		+ ((additional_json == NULL) ? strlen(TELEGRMA_MSG_FMT) : (strlen(TELEGRMA_MSG_MARKUP_FMT) + strlen(additional_json))));
 
-    client = esp_http_client_init(&teleCtx->httpClientCfg);
+
 
 	sprintf(teleCtx->path, TELEGRAM_SERVER"/bot%s/sendMessage", teleCtx->token);
 	if (additional_json == NULL)
@@ -405,6 +438,7 @@ static char *telegram_make_inline_kbrd(telegram_kbrd_inline_t *kbrd)
 	sprintf(&str[count], "]");
 	return str;
 }
+
 
 void telegram_kbrd(void *teleCtx_ptr, double chat_id, const char *message, telegram_kbrd_t *kbrd)
 {

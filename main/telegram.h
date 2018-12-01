@@ -33,7 +33,7 @@ typedef struct
 typedef struct 
 {
 	char *text;
-	char callback_data[64];
+	char callback_data[64 + 1];
 } telegram_kbrd_inline_btn_t;
 
 typedef struct
@@ -41,13 +41,16 @@ typedef struct
 	telegram_kbrd_inline_btn_t *buttons; //Last element should be NULL
 } telegram_kbrd_inline_t;
 
+typedef union
+{
+	telegram_kbrd_markup_t markup;
+	telegram_kbrd_inline_t inl;
+} telegram_kbrd_descr_t;
+
 typedef struct 
 {
 	telegram_kbrd_type_t type;
-	union {
-		telegram_kbrd_markup_t markup;
-		telegram_kbrd_inline_t inl;
-	} kbrd;
+	telegram_kbrd_descr_t kbrd;
 } telegram_kbrd_t;
 
 typedef void( *telegram_on_msg_cb_t)(void *teleCtx, double chat_id, const char *from, const char *text);

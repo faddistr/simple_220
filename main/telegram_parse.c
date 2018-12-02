@@ -11,6 +11,7 @@
 static void telegram_free_user(telegram_user_t *user);
 static void telegram_free_chat(telegram_chat_t *chat);
 static void telegram_free_file(telegram_document_t *file);
+static void telegram_free_photosize(telegram_photosize_t *file);
 static void telegram_free_message(telegram_chat_message_t *msg);
 static void telegram_free_callback_query(telegram_chat_callback_t *query);
 static telegram_chat_type_t telegram_get_chat_type(const char *strType);
@@ -18,7 +19,6 @@ static telegram_user_t *telegram_parse_user(cJSON *subitem);
 static telegram_chat_t *telegram_parse_chat(cJSON *subitem);
 static telegram_chat_message_t *telegram_parse_message(cJSON *subitem);
 static telegram_chat_callback_t *telegram_parse_callback_query(cJSON *subitem);
-
 
 static void telegram_free_user(telegram_user_t *user)
 {
@@ -183,7 +183,7 @@ static telegram_photosize_t *telegram_parse_photosize(cJSON *subitem)
 static telegram_document_t *telegram_parse_file(cJSON *subitem)
 {
 	cJSON *val = NULL;
-	telegram_document_t *file = calloc(1, sizeof(telegram_parse_file));
+	telegram_document_t *file = calloc(1, sizeof(telegram_document_t));
 
 	if (file == NULL)
 	{

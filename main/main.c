@@ -63,10 +63,38 @@ static void save_password_cb(char *new_password)
     config_save(&config);
 }
 
-static void telegram_new_message(void *teleCtx, double chat_id, const char *from, const char *text)
+static telegram_kbrd_inline_btn_t kbrd_btns[] =
 {
-    ESP_LOGI(TAG, "New message: FROM: %s TEXT %s CHAT ID %f", from, text, chat_id);
-    telegram_send_text_message(teleCtx, chat_id, text);
+    {.text = "Fuck you", .callback_data = "Fuck_you"},
+    {.text = "Fuck you 2", .callback_data = "Fuck_you2"},
+    {}
+};
+
+static telegram_kbrd_t keyboard = 
+{
+    .type = TELEGRAM_KBRD_INLINE,
+    .kbrd = {
+        .inl.buttons = kbrd_btns,
+    },
+};
+
+static void telegram_new_message(void *teleCtx, telegram_update_t *info)
+{
+    ESP_LOGI(TAG, "New message: ID %f", info->id);
+
+    if (info->channel_post != NULL)
+    {
+        telegram_kbrd(teleCtx, info->channel_post->chat->id, info->channel_post->text, &keyboard);
+    }
+
+
+    if (info->callback_query != NULL)
+    {
+        ESP_LOGE(TAG, "CB data: %s", info->callback_query->data);
+    }
+
+    //telegram_send_text_message(teleCtx, chat_id, text);
+    //telegram_kbrd(teleCtx, chat_id, text, &keyboard);
 }
 
 static esp_err_t event_handler(void *ctx, system_event_t *event)

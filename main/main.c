@@ -15,6 +15,7 @@
 #include <driver/gpio.h>
 
 #include "httpd_back.h"
+#include "telegram.h"
 #include "config.h"
 
 #define CONFIG_BUTTON 25U
@@ -26,6 +27,7 @@ static config_t default_config =
 {
     .ssid = EXAMPLE_WIFI_SSID,
     .password = EXAMPLE_WIFI_PASS,
+    .telegram_token = "695606106:AAGwCJRw6Y6xCXPTITX7Y8zGM70rg6O-Cyo",
 };
 #endif
 static const int CONNECTED_BIT = BIT0;
@@ -36,13 +38,14 @@ static const char *TAG="MAIN";
 static EventGroupHandle_t s_wifi_event_group;
 static config_t config;
 static bool is_config = false;
+static void *teleCtx;
 
 static void smartconfig_task(void * parm);
 static void sc_callback(smartconfig_status_t status, void *pdata);
 
 static bool check_button_press(void)
 {
-    gpio_config_t button_conf = {
+    static const gpio_config_t button_conf = {
         .intr_type = GPIO_PIN_INTR_DISABLE,
         .mode = GPIO_MODE_INPUT,
         .pin_bit_mask = 1ULL<<CONFIG_BUTTON,
@@ -58,6 +61,40 @@ static void save_password_cb(char *new_password)
 {
     strncpy(config.user_pass, new_password, HTTPD_MAX_PASSWORD);
     config_save(&config);
+}
+
+static telegram_kbrd_inline_btn_t kbrd_btns[] =
+{
+    {.text = "Fuck you", .callback_data = "Fuck_you"},
+    {.text = "Fuck you 2", .callback_data = "Fuck_you2"},
+    {}
+};
+
+static telegram_kbrd_t keyboard = 
+{
+    .type = TELEGRAM_KBRD_INLINE,
+    .kbrd = {
+        .inl.buttons = kbrd_btns,
+    },
+};
+
+static void telegram_new_message(void *teleCtx, telegram_update_t *info)
+{
+    ESP_LOGI(TAG, "New message: ID %f", info->id);
+
+    if (info->channel_post != NULL)
+    {
+        telegram_kbrd(teleCtx, info->channel_post->chat->id, info->channel_post->text, &keyboard);
+    }
+
+
+    if (info->callback_query != NULL)
+    {
+        ESP_LOGE(TAG, "CB data: %s", info->callback_query->data);
+    }
+
+    //telegram_send_text_message(teleCtx, chat_id, text);
+    //telegram_kbrd(teleCtx, chat_id, text, &keyboard);
 }
 
 static esp_err_t event_handler(void *ctx, system_event_t *event)
@@ -82,6 +119,7 @@ static esp_err_t event_handler(void *ctx, system_event_t *event)
             ESP_LOGI(TAG, "Got IP: '%s'",
                     ip4addr_ntoa(&event->event_info.got_ip.ip_info.ip));
             xEventGroupSetBits(s_wifi_event_group, CONNECTED_BIT);
+            teleCtx = telegram_init(config.telegram_token, telegram_new_message);
 
             /* Start the web server */
             if (*server == NULL) {
@@ -99,6 +137,7 @@ static esp_err_t event_handler(void *ctx, system_event_t *event)
                 httpd_stop_webserver(*server);
                 *server = NULL;
             }
+            telegram_stop(teleCtx);
             break;
         default:
             break;
@@ -205,6 +244,7 @@ static void initialise_wifi(void *arg)
     ESP_ERROR_CHECK(esp_wifi_start());
 }
 
+
 void app_main()
 {
     static httpd_handle_t server = NULL;
@@ -219,5 +259,6 @@ void app_main()
 #if 1
     config_save(&default_config);
 #endif
+     
     initialise_wifi(&server);
 }

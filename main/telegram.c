@@ -1,8 +1,8 @@
 #include <string.h>
 #include <stdbool.h>
 #include <esp_log.h>
-#include <esp_http_client.h>
-#include "freertos/timers.h"
+#include <freertos/FreeRTOS.h>
+#include <freertos/timers.h>
 #include "telegram.h"
 #include "telegram_io.h"
 
@@ -14,16 +14,17 @@
 
 #define TELEGRAM_GET_MESSAGE_POST_DATA_FMT "limit=10"
 #define TELEGRAM_GET_MESSAGE_POST_DATA_OFFSET_FMT TELEGRAM_GET_MESSAGE_POST_DATA_FMT"&offset=%d"
+#define TELEGRAM_GET_UPDATES_FMT TELEGRAM_SERVER"/bot%s/getUpdates?%s"
+#define TELEGRAM_SEND_MESSAGE_FMT  TELEGRAM_SERVER"/bot%s/sendMessage"
 
 #define TELEGRMA_MSG_FMT "{\"chat_id\": \"%f\", \"text\": \"%s\"}"
 #define TELEGRMA_MSG_MARKUP_FMT "{\"chat_id\": \"%f\", \"text\": \"%s\", \"reply_markup\": {%s}}"
 
-static const char *TAG="telegram";
+static const char *TAG="telegram_core";
 
 typedef struct
 {
     char *token;	
-	char path[TELEGRAM_MAX_PATH + 1]; //TODO: MUTEX
 	int32_t last_update_id;
 	bool stop;
 	TimerHandle_t timer;
@@ -50,6 +51,7 @@ static void telegram_process_message_int_cb(void *hnd, telegram_update_t *upd)
 static void telegram_getMessages(telegram_ctx_t *teleCtx)
 {
 	char *buffer = NULL;
+	char *path = NULL;
 	char post_data[strlen(TELEGRAM_GET_MESSAGE_POST_DATA_OFFSET_FMT) + 16];
 
 	if (teleCtx->last_update_id)
@@ -60,13 +62,21 @@ static void telegram_getMessages(telegram_ctx_t *teleCtx)
 		sprintf(post_data, TELEGRAM_GET_MESSAGE_POST_DATA_FMT);
 	}
 
-	snprintf(teleCtx->path, TELEGRAM_MAX_PATH, TELEGRAM_SERVER"/bot%s/getUpdates?%s", teleCtx->token, post_data);
-	buffer = telegram_io_get(teleCtx->path, NULL);
+	path = calloc(sizeof(char), strlen(TELEGRAM_GET_UPDATES_FMT) + strlen(teleCtx->token) + strlen(post_data) + 1);
+	if (path == NULL)
+	{
+		return;
+	}
+
+	snprintf(path, TELEGRAM_MAX_PATH, TELEGRAM_GET_UPDATES_FMT, teleCtx->token, post_data);
+	buffer = telegram_io_get(path, NULL);
  	if (buffer != NULL)
  	{
  		telegram_parse_messages(teleCtx, buffer, telegram_process_message_int_cb);
  		free(buffer);
  	}
+
+ 	free(path);
 }
 
 static void telegram_timer_cb(TimerHandle_t pxTimer) 
@@ -107,7 +117,6 @@ void telegram_stop(void *teleCtx_ptr)
 	}
 
 	teleCtx = (telegram_ctx_t *)teleCtx_ptr;
-
 	teleCtx->stop = true;	
 }
 
@@ -138,6 +147,7 @@ static void telegram_send_message(void *teleCtx_ptr, telegram_int_t chat_id, con
 		{"Content-Type", "application/json"}, 
 		{NULL, NULL}
 	};
+	char *path = NULL;
 	char *payload = NULL;
 	telegram_ctx_t *teleCtx = NULL;
 
@@ -150,8 +160,19 @@ static void telegram_send_message(void *teleCtx_ptr, telegram_int_t chat_id, con
 	teleCtx = (telegram_ctx_t *)teleCtx_ptr;
 	payload = calloc(sizeof(char), strlen(message) + TEGLEGRAM_CHAT_ID_MAX_LEN 
 		+ ((additional_json == NULL) ? strlen(TELEGRMA_MSG_FMT) : (strlen(TELEGRMA_MSG_MARKUP_FMT) + strlen(additional_json))));
+	if (payload == NULL)
+	{
+		return;
+	}
 
-	sprintf(teleCtx->path, TELEGRAM_SERVER"/bot%s/sendMessage", teleCtx->token);
+	path = calloc(sizeof(char), strlen(TELEGRAM_SEND_MESSAGE_FMT) + strlen(teleCtx->token) + 1);
+	if (path == NULL)
+	{
+		free(payload);
+		return;
+	}
+
+	sprintf(path, TELEGRAM_SEND_MESSAGE_FMT, teleCtx->token);
 	if (additional_json == NULL)
 	{
 		sprintf(payload, TELEGRMA_MSG_FMT, chat_id, message);
@@ -161,7 +182,8 @@ static void telegram_send_message(void *teleCtx_ptr, telegram_int_t chat_id, con
 	} 
     ESP_LOGI(TAG, "Send message: %s", payload);
 
-	telegram_io_send(teleCtx->path, payload, sendHeaders); 
+	telegram_io_send(path, payload, (telegram_io_header_t *)sendHeaders); 
+	free(path);
 	free(payload);
 }
 

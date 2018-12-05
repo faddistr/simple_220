@@ -1,11 +1,17 @@
 #ifndef HTTPD_BACK_H
 #define HTTPD_BACK_H
-#include <esp_http_server.h>
-#define HTTPD_MAX_PASSWORD 16U
+#include <stdint.h>
 
-typedef void (*httpd_change_password_cb_t)(char *new_pass);
+typedef struct
+{
+    const char *key;
+    const char *value;
+} httpd_arg_t;
 
-httpd_handle_t httpd_start_webserver(char *password, httpd_change_password_cb_t change_pass_cb);
-void httpd_stop_webserver(httpd_handle_t server);
+typedef void(* cmd_cb_t)(void *ctx, httpd_arg_t *argv, uint32_t argc);
+
+void httpd_send_answ(void *req_ptr, const char *str, uint32_t len);
+void *httpd_start_webserver(cmd_cb_t cmd_cb);
+void httpd_stop_webserver(void *server_ptr);
 
 #endif

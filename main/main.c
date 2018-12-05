@@ -39,6 +39,8 @@ static EventGroupHandle_t s_wifi_event_group;
 static config_t config;
 static bool is_config = false;
 static void *teleCtx;
+static void *server;
+
 
 static void smartconfig_task(void * parm);
 static void sc_callback(smartconfig_status_t status, void *pdata);
@@ -55,12 +57,6 @@ static bool check_button_press(void)
 
     gpio_config(&button_conf);
     return gpio_get_level(CONFIG_BUTTON);
-}
-
-static void save_password_cb(char *new_password)
-{
-    strncpy(config.user_pass, new_password, HTTPD_MAX_PASSWORD);
-    config_save(&config);
 }
 
 static telegram_kbrd_inline_btn_t kbrd_btns[] =
@@ -97,9 +93,16 @@ static void telegram_new_message(void *teleCtx, telegram_update_t *info)
     //telegram_kbrd(teleCtx, chat_id, text, &keyboard);
 }
 
+static void httpd_back_new_message(void *ctx, httpd_arg_t *argv, uint32_t argc)
+{
+    char answ_cmd[32] = {0};
+
+    snprintf(answ_cmd, sizeof(answ_cmd) - 1, "Count = %d\n", argc);
+    httpd_send_answ(ctx, answ_cmd, strlen(answ_cmd));
+}
+
 static esp_err_t event_handler(void *ctx, system_event_t *event)
 {
-    httpd_handle_t *server = (httpd_handle_t *) ctx;
 
     switch(event->event_id) {
         case SYSTEM_EVENT_STA_START:
@@ -122,8 +125,8 @@ static esp_err_t event_handler(void *ctx, system_event_t *event)
             teleCtx = telegram_init(config.telegram_token, telegram_new_message);
 
             /* Start the web server */
-            if (*server == NULL) {
-                *server = httpd_start_webserver(config.user_pass, save_password_cb);
+            if (server == NULL) {
+                server = httpd_start_webserver(httpd_back_new_message);
             }
             break;
 
@@ -133,11 +136,11 @@ static esp_err_t event_handler(void *ctx, system_event_t *event)
             ESP_ERROR_CHECK(esp_wifi_connect());
 
             /* Stop the web server */
-            if (*server) {
-                httpd_stop_webserver(*server);
-                *server = NULL;
+            if (server) {
+                httpd_stop_webserver(server);
+                server = NULL;
             }
-            telegram_stop(teleCtx);
+            telegram_stop(&teleCtx);
             break;
         default:
             break;
@@ -203,7 +206,7 @@ static void smartconfig_task(void * parm)
     }
 }
 
-static void initialise_wifi(void *arg)
+static void initialise_wifi(void)
 {
     wifi_config_t wifi_config = {
         .sta = {
@@ -217,11 +220,11 @@ static void initialise_wifi(void *arg)
     s_wifi_event_group = xEventGroupCreate();
 
     tcpip_adapter_init();
-    ESP_ERROR_CHECK(esp_event_loop_init(event_handler, arg));
+    ESP_ERROR_CHECK(esp_event_loop_init(event_handler, NULL));
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
     ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    if (!check_button_press())
+    if (true)//!check_button_press())
     {
         if (config_load(&config) != ESP_OK)
         {
@@ -247,7 +250,6 @@ static void initialise_wifi(void *arg)
 
 void app_main()
 {
-    static httpd_handle_t server = NULL;
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         // NVS partition was truncated and needs to be erased
@@ -260,5 +262,5 @@ void app_main()
     config_save(&default_config);
 #endif
      
-    initialise_wifi(&server);
+    initialise_wifi();
 }

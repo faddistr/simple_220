@@ -1,49 +1,28 @@
 #include <esp_log.h>
 #include <esp_system.h>
+#include <esp_http_server.h>
+#include <esp_http_client.h>
 #include "httpd_back.h"
-#include "plug.h"
-#include "ota.h"
+#define HTTPD_MAX_QUERY_SIZE 256U
 
 static const char *TAG="httpd_back";
 
-#define HTTPD_MAX_OTA_URL 128U
-
-static char *user_pass = NULL;
-static httpd_change_password_cb_t chg_pass_cb;
-
-const char *key_set_ok_str = "{\r\n\t\"stat\":\"ok\"\r\n}";
-const char *key_set_fail_str = "{\r\n\t\"stat\":\"fail\"\r\n}";
-
-static esp_err_t plug_get_handler(httpd_req_t *req);
-static esp_err_t ota_get_handler(httpd_req_t *req);
-static esp_err_t ctrl_get_handler(httpd_req_t *req);
-static esp_err_t ota_http_event_handler(esp_http_client_event_t *evt);
+static cmd_cb_t cmd_cb;
+static esp_err_t http_event_handler(esp_http_client_event_t *evt);
+static esp_err_t cmd_handler(httpd_req_t *req);
 
 static esp_http_client_config_t config =
 {
-    .event_handler = ota_http_event_handler,
+    .event_handler = http_event_handler,
 };
 
-static httpd_uri_t plug = {
-    .uri       = "/plug",
+static httpd_uri_t cmd = {
+    .uri       = "/cmd",
     .method    = HTTP_GET,
-    .handler   = plug_get_handler,
+    .handler   = cmd_handler,
 };
 
-
-static httpd_uri_t ctrl = {
-    .uri       = "/ctrl",
-    .method    = HTTP_GET,
-    .handler   = ctrl_get_handler,
-};
-
-static httpd_uri_t ota = {
-    .uri       = "/ota",
-    .method    = HTTP_GET,
-    .handler   = ota_get_handler,
-};
-
-static esp_err_t ota_http_event_handler(esp_http_client_event_t *evt)
+static esp_err_t http_event_handler(esp_http_client_event_t *evt)
 {
     switch(evt->event_id) {
         case HTTP_EVENT_ERROR:
@@ -71,226 +50,127 @@ static esp_err_t ota_http_event_handler(esp_http_client_event_t *evt)
     return ESP_OK;
 }
 
-static bool start_ota(const char *url)
+static esp_err_t cmd_handler(httpd_req_t *req)
 {
-    bool ret = false;
-    esp_err_t result;
+    esp_err_t res;
+    char *buf = NULL;
+    uint32_t i = 0;
+    uint32_t arg_count;
+    httpd_arg_t *arg_array = NULL;
+    size_t query_size = httpd_req_get_url_query_len(req);
 
-    config.url = strdup(url);
-
-    result = esp_http_ota(&config);
-    free((void *)config.url);
-    ESP_LOGI(TAG, "Update done, result %d", result);
-
-    if (result == ESP_OK)
+    if ((query_size > HTTPD_MAX_QUERY_SIZE) || (query_size == 0))
     {
-        ret = true;
+        ESP_LOGW(TAG, "URL query too big or 0 %d", query_size);   
+        return ESP_OK;
     }
 
-    return ret;
-}
-
-static bool check_pass(const char *query)
-{
-    bool ret = false;
-
-    if (0 != strlen(user_pass))
+    query_size++;
+    buf = calloc(sizeof(char), query_size + 1);
+    if (buf == NULL)
     {
-        char password[HTTPD_MAX_PASSWORD + 1];
+        ESP_LOGE(TAG, "No mem!");
+        return ESP_OK;   
+    }
 
-        if ((httpd_query_key_value(query, "password", password, sizeof(password)) != ESP_OK)
-            || (0 != strncmp(user_pass, password, HTTPD_MAX_PASSWORD)))
+    res = httpd_req_get_url_query_str(req, buf, query_size);
+    if (res != ESP_OK)
+    {
+        free(buf);
+        ESP_LOGW(TAG, "URL query get failed %d", res);
+        return ESP_OK;   
+    }
+
+    arg_count = 1; //at least one if length > 0
+    while (buf[i])
+    {
+        if (buf[i] == '&')
         {
-            ESP_LOGW(TAG, "Auth failed...");
-        } else
+            arg_count++;
+        }
+        i++;
+    }
+
+    arg_array = calloc(sizeof(httpd_arg_t), arg_count);
+    if (arg_array == NULL)
+    {
+        free(buf);
+        ESP_LOGE(TAG, "No mem! (arg_array)");
+        return ESP_OK;   
+    }
+
+    i = 0;
+    arg_count = 0;
+    while (buf[i])
+    {
+        if (arg_array[arg_count].key == NULL)
         {
-            ret = true;
+            arg_array[arg_count].key = &buf[i];
         }
-    } else
-    {
-        ret = true;
-    }
 
-    return ret;
-}
+        if (buf[i] == '&')
+        {
+            buf[i] = '\0';
+            ESP_LOGI(TAG, "{%s, %s}", arg_array[arg_count].key, (arg_array[arg_count].value == NULL)?"NULL":arg_array[arg_count].value);
+            arg_count++;
+        }
 
-static esp_err_t plug_get_handler(httpd_req_t *req)
-{
-    char*  buf;
-    size_t buf_len;
-    esp_err_t res = ESP_FAIL;
-
-    buf_len = httpd_req_get_url_query_len(req) + 1;
-    if (buf_len > 1) {
-        buf = malloc(buf_len);
-        if (httpd_req_get_url_query_str(req, buf, buf_len) == ESP_OK) {
-            do
+        if (buf[i] == '=')
+        {
+            buf[i] = '\0';
+            if ((arg_array[arg_count].value == NULL) && (buf[i + 1] != '&'))
             {
-                char key[2];
-                char stat[2];
-                uint32_t key_int;
-                uint32_t stat_int;
-
-                ESP_LOGI(TAG, "Found URL query => %s", buf);
-
-                if (!check_pass(buf))
-                {
-                    break;
-                }
-
-
-                if ((httpd_query_key_value(buf, "key", key, sizeof(key)) != ESP_OK)
-                    || (httpd_query_key_value(buf, "stat", stat, sizeof(stat)) != ESP_OK))
-                {
-                    ESP_LOGW(TAG, "Param missed!");
-                    break;
-                } 
-
-                key_int = (key[0] - 0x30); /* convert to int */
-                if (key_int > 9)
-                {
-                    ESP_LOGW(TAG, "key not int!");
-                    break;
-                }
-
-                stat_int = (stat[0] - 0x30);
-                if (stat_int > 9)
-                {
-                    ESP_LOGW(TAG, "stat not int!");
-                    break;
-                }
-
-                res = plug_set_key(key_int, !!stat_int);
-            } while (0);
+                arg_array[arg_count].value  = &buf[i + 1];
+            }
         }
-        free(buf);
+        i++;
     }
+     ESP_LOGI(TAG, "{%s, %s}", arg_array[arg_count].key, (arg_array[arg_count].value == NULL)?"NULL":arg_array[arg_count].value);
 
+    arg_count++;
 
-    if (res == ESP_OK)
-    {
-        httpd_resp_send(req, key_set_ok_str, strlen(key_set_ok_str));
-    } else
-    {
-        httpd_resp_send(req, key_set_fail_str, strlen(key_set_fail_str));
-    }
-
+    cmd_cb(req, arg_array, arg_count);
+    free(buf);
+    free(arg_array);
     return ESP_OK;
 }
 
-static esp_err_t ctrl_get_handler(httpd_req_t *req)
+void httpd_send_answ(void *req_ptr, const char *str, uint32_t len)
 {
-    char*  buf;
-    size_t buf_len;
-    esp_err_t res = ESP_FAIL;
+    esp_err_t res;
+    httpd_req_t *req = NULL;
 
-    buf_len = httpd_req_get_url_query_len(req) + 1;
-    if (buf_len > 1) {
-        buf = malloc(buf_len);
-        if (httpd_req_get_url_query_str(req, buf, buf_len) == ESP_OK) {
-            do
-            {
-                char param[HTTPD_MAX_PASSWORD + 1];
-                ESP_LOGI(TAG, "Found URL query => %s", buf);
-         
-                if (!check_pass(buf))
-                {
-                    break;
-                }
-
-                if (httpd_query_key_value(buf, "new_pass", param, sizeof(param)) == ESP_OK)
-                {
-                    free(user_pass);
-                    user_pass = strdup(param);
-                    if (chg_pass_cb)
-                    {
-                        chg_pass_cb(param);
-                    }
-                    res = ESP_OK;
-                } 
-            } while (0);
-        }
-        free(buf);
+    if (req_ptr == NULL)
+    {
+        ESP_LOGW(TAG, "httpd_send_answ: Wrong argument");
+        return;
     }
 
+    req = (httpd_req_t *)req_ptr;
 
-    if (res == ESP_OK)
+    res = httpd_resp_send(req, str, len);
+    if (res != ESP_OK)
     {
-        httpd_resp_send(req, key_set_ok_str, strlen(key_set_ok_str));
-    } else
-    {
-        httpd_resp_send(req, key_set_fail_str, strlen(key_set_fail_str));
+        ESP_LOGW(TAG, "httpd_resp_send failed %d", res);
     }
-
-    return ESP_OK;
 }
 
-static esp_err_t ota_get_handler(httpd_req_t *req)
-{
-    char*  buf;
-    size_t buf_len;
-    size_t start = 0;
-    esp_err_t res = ESP_FAIL;
-
-    buf_len = httpd_req_get_url_query_len(req) + 1;
-    if (buf_len > 1) {
-        buf = malloc(buf_len);
-        if (httpd_req_get_url_query_str(req, buf, buf_len) == ESP_OK) {
-            do
-            {
-                ESP_LOGI(TAG, "Found URL query => %s", buf);
-         
-                if (!check_pass(buf))
-                {
-                    break;
-                }
-
-                if (strlen(user_pass) != 0)
-                {
-                    start = strlen("pass=")+strlen(user_pass) + 1;
-                }
-
-                ESP_LOGI(TAG, "Found OTA query => %s", &buf[start]);
-
-                if (start_ota(&buf[start]))
-                {
-                    res = ESP_OK;
-                }
-            } while (0);
-        }
-        free(buf);
-    }
-
-
-    if (res == ESP_OK)
-    {
-        httpd_resp_send(req, key_set_ok_str, strlen(key_set_ok_str));
-        ESP_LOGI(TAG, "Update done succesfull. Restarting system...");
-        vTaskDelay(5000 / portTICK_PERIOD_MS);
-        esp_restart();
-    } else
-    {
-        httpd_resp_send(req, key_set_fail_str, strlen(key_set_fail_str));
-    }
-
-    return ESP_OK;
-}
-
-httpd_handle_t httpd_start_webserver(char *password, httpd_change_password_cb_t change_pass_cb)
+void *httpd_start_webserver(cmd_cb_t arg_cmd_cb)
 {
     httpd_handle_t server = NULL;
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
 
+    if (arg_cmd_cb == NULL)
+    {
+        ESP_LOGE(TAG, "arg_cmd_cb == NULL");
+        return NULL;
+    }
+
     ESP_LOGI(TAG, "Starting server on port: '%d'", config.server_port);
     if (httpd_start(&server, &config) == ESP_OK) {
-        user_pass = strdup(password);
-        chg_pass_cb = change_pass_cb;
-        plug_init();
         ESP_LOGI(TAG, "Registering URI handlers");
-        httpd_register_uri_handler(server, &plug);
-        httpd_register_uri_handler(server, &ctrl);
-        httpd_register_uri_handler(server, &ota);
-
+        cmd_cb = arg_cmd_cb;
+        httpd_register_uri_handler(server, &cmd);
         return server;
     }
 
@@ -299,12 +179,16 @@ httpd_handle_t httpd_start_webserver(char *password, httpd_change_password_cb_t 
     return NULL;
 }
 
-void httpd_stop_webserver(httpd_handle_t server)
+void httpd_stop_webserver(void *server_ptr)
 {
+    httpd_handle_t server = (httpd_handle_t)server_ptr;
+    if (server == NULL)
+    {
+        ESP_LOGE(TAG, "httpd_stop_webserver NULL argument");
+        return;
+    }
+
     ESP_LOGI(TAG, "Stopping web server...");
-    free(user_pass);
-    user_pass = NULL;
-    chg_pass_cb = NULL;
-    plug_deinit();
     httpd_stop(server);
+    cmd_cb = NULL;
 }

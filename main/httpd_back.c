@@ -7,19 +7,19 @@
 
 static const char *TAG="httpd_back";
 
-static cmd_cb_t cmd_cb;
+typedef struct
+{
+    cmd_cb_t       cmd_cb;
+    httpd_handle_t server;
+    httpd_uri_t    cmd;
+} httpd_back_internal_t;
+
 static esp_err_t http_event_handler(esp_http_client_event_t *evt);
 static esp_err_t cmd_handler(httpd_req_t *req);
 
 static esp_http_client_config_t config =
 {
     .event_handler = http_event_handler,
-};
-
-static httpd_uri_t cmd = {
-    .uri       = "/cmd",
-    .method    = HTTP_GET,
-    .handler   = cmd_handler,
 };
 
 static esp_err_t http_event_handler(esp_http_client_event_t *evt)
@@ -52,12 +52,19 @@ static esp_err_t http_event_handler(esp_http_client_event_t *evt)
 
 static esp_err_t cmd_handler(httpd_req_t *req)
 {
+    httpd_back_internal_t *ctx = (httpd_back_internal_t *)req->user_ctx;
     esp_err_t res;
     char *buf = NULL;
     uint32_t i = 0;
     uint32_t arg_count;
     httpd_arg_t *arg_array = NULL;
     size_t query_size = httpd_req_get_url_query_len(req);
+
+    if (ctx == NULL)
+    {
+        ESP_LOGE(TAG, "Internal error!!!");
+        return ESP_OK;
+    }
 
     if ((query_size > HTTPD_MAX_QUERY_SIZE) || (query_size == 0))
     {
@@ -129,10 +136,16 @@ static esp_err_t cmd_handler(httpd_req_t *req)
 
     arg_count++;
 
-    cmd_cb(req, arg_array, arg_count);
+    ctx->cmd_cb(req, arg_array, arg_count);
     free(buf);
     free(arg_array);
     return ESP_OK;
+}
+
+static void httpd_free_res(httpd_back_internal_t *ctx)
+{
+    free(ctx->cmd.uri);
+    free(ctx);
 }
 
 void httpd_send_answ(void *req_ptr, const char *str, uint32_t len)
@@ -157,6 +170,7 @@ void httpd_send_answ(void *req_ptr, const char *str, uint32_t len)
 
 void *httpd_start_webserver(cmd_cb_t arg_cmd_cb)
 {
+    httpd_back_internal_t *ctx = NULL;
     httpd_handle_t server = NULL;
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
 
@@ -168,10 +182,33 @@ void *httpd_start_webserver(cmd_cb_t arg_cmd_cb)
 
     ESP_LOGI(TAG, "Starting server on port: '%d'", config.server_port);
     if (httpd_start(&server, &config) == ESP_OK) {
+        esp_err_t res;
+        
+        ctx = calloc(1, sizeof(httpd_back_internal_t));
+        if (ctx == NULL)
+        {
+            ESP_LOGE(TAG, "No mem!!!");
+            httpd_stop(server);
+            return NULL;
+        }
+
+        ctx->cmd_cb = arg_cmd_cb;
+        ctx->server = server;
+        ctx->cmd.uri = strdup("/cmd");
+        ctx->cmd.method = HTTP_GET;
+        ctx->cmd.handler = cmd_handler;
+        ctx->cmd.user_ctx = ctx;
         ESP_LOGI(TAG, "Registering URI handlers");
-        cmd_cb = arg_cmd_cb;
-        httpd_register_uri_handler(server, &cmd);
-        return server;
+
+        res = httpd_register_uri_handler(ctx->server, &ctx->cmd);
+        if (res != ESP_OK)
+        {
+            ESP_LOGE(TAG, "httpd_register_uri_handler failed %d", res);
+            httpd_free_res(ctx);
+            ctx = NULL;
+        }
+
+        return ctx;
     }
 
     ESP_LOGI(TAG, "Error starting server!");
@@ -181,14 +218,14 @@ void *httpd_start_webserver(cmd_cb_t arg_cmd_cb)
 
 void httpd_stop_webserver(void *server_ptr)
 {
-    httpd_handle_t server = (httpd_handle_t)server_ptr;
-    if (server == NULL)
+    httpd_back_internal_t *ctx = (httpd_back_internal_t *)server_ptr;
+    if (ctx == NULL)
     {
         ESP_LOGE(TAG, "httpd_stop_webserver NULL argument");
         return;
     }
 
     ESP_LOGI(TAG, "Stopping web server...");
-    httpd_stop(server);
-    cmd_cb = NULL;
+    httpd_stop(ctx->server);
+    httpd_free_res(ctx);
 }

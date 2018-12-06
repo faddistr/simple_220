@@ -18,6 +18,7 @@
 #include "telegram.h"
 #include "config.h"
 #include "cmd_executor.h"
+#include "plug.h"
 
 #define CONFIG_BUTTON 25U
 
@@ -31,7 +32,6 @@ static config_t config;
 static bool is_config = false;
 static void *teleCtx;
 static void *server;
-static void *cmd;
 
 
 static void smartconfig_task(void * parm);
@@ -63,7 +63,7 @@ static void telegram_new_message(void *teleCtx, telegram_update_t *info)
     cmd_info->transport = CMD_SRC_TELEGRAM;
     cmd_info->sys_config = &config;
 
-    cmd_execute_telegram(cmd, teleCtx, info, cmd_info);
+    cmd_execute_telegram(teleCtx, info, cmd_info);
     if (cmd_info->sys_config_changed)
     {
         config_save(cmd_info->sys_config);
@@ -99,7 +99,7 @@ static void httpd_back_new_message(void *ctx, httpd_arg_t *argv, uint32_t argc, 
     info->sys_config = &config;
     for (i = 0; i < argc; i++)
     {
-        cmd_execute_raw(cmd, argv[i].key, argv[i].value, info);
+        cmd_execute_raw(argv[i].key, argv[i].value, info);
         httpd_set_sess(ctx, info->user_ses);
         if (info->sys_config_changed)
         {
@@ -217,12 +217,7 @@ static void smartconfig_task(void * parm)
 
 static void initialise_wifi(void)
 {
-    wifi_config_t wifi_config = {
-        .sta = {
-            .ssid = EXAMPLE_WIFI_SSID,
-            .password = EXAMPLE_WIFI_PASS,
-        },
-    };
+    wifi_config_t wifi_config = {0};
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
 
@@ -267,6 +262,7 @@ void app_main()
         err = nvs_flash_init();
     }
     ESP_ERROR_CHECK( err );
-    cmd = cmd_executor_init();
+    plug_init();
+    cmd_init();
     initialise_wifi();
 }

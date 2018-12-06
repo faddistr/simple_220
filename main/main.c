@@ -62,17 +62,25 @@ static bool check_button_press(void)
     return gpio_get_level(CONFIG_BUTTON);
 }
 
-static telegram_kbrd_t keyboard = 
-{
-    .type = TELEGRAM_KBRD_INLINE,
-    .kbrd = {
-        .inl.buttons = kbrd_btns,
-    },
-};
-
 static void telegram_new_message(void *teleCtx, telegram_update_t *info)
 {
-    cmd_execute_telegram(cmd, teleCtx, info);
+    cmd_additional_info_t *cmd_info = calloc(1, sizeof(cmd_additional_info_t));
+
+    if (info == NULL)
+    {
+        return;
+    }
+
+    cmd_info->transport = CMD_SRC_TELEGRAM;
+    cmd_info->sys_config = &config;
+
+    cmd_execute_telegram(cmd, teleCtx, info, cmd_info);
+    if (cmd_info->sys_config_changed)
+    {
+        config_save(cmd_info->sys_config);
+    }
+
+    free(cmd_info);
 }
 
 static void httpd_back_send(void *ctx, void *buff, uint32_t buff_len)
@@ -99,14 +107,14 @@ static void httpd_back_new_message(void *ctx, httpd_arg_t *argv, uint32_t argc, 
     info->send_cb = httpd_back_send;
     info->arg = ctx;
     info->user_ses = sess;
-    info->config = config;
+    info->sys_config = &config;
     for (i = 0; i < argc; i++)
     {
         cmd_execute_raw(cmd, argv[i].key, argv[i].value, info);
         httpd_set_sess(ctx, info->user_ses);
         if (info->sys_config_changed)
         {
-            config_save(&info->config);
+            config_save(info->sys_config);
         }
     }
 

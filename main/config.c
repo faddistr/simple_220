@@ -8,10 +8,7 @@
 #define STORAGE_NAMESPACE "STORAGE"
 #define CONFIG_NAME "wifi_config"
 
-
 static const char *TAG="config";
-
-
 
 esp_err_t config_load(config_t *config)
 {

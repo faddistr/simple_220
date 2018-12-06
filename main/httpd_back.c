@@ -152,7 +152,6 @@ static void httpd_free_res(httpd_back_internal_t *ctx)
 void httpd_set_sess(void *req_ptr, void *sess)
 {
     esp_err_t res;
-    httpd_back_session_t *ses_ptr;
     httpd_req_t *req = (httpd_req_t *)req_ptr;
 
     if (req_ptr == NULL)

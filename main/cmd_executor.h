@@ -11,12 +11,12 @@ typedef enum
 	CMD_SRC_TELEGRAM,
 } cmd_src_tansport_t;
 
-typedef void(*send_cb)(void *arg, void *buff, uint32_t buff_len);
+typedef void(*send_cb_t)(void *arg, void *buff, uint32_t buff_len);
 
 typedef struct
 {
 	cmd_src_tansport_t transport;
-	send_cb cmd_send_cb;
+	send_cb_t send_cb;
 	void *arg; 
  	void *user_ses;
  	config_t *sys_config;
@@ -26,6 +26,6 @@ typedef struct
 void *cmd_executor_init(void);
 void cmd_executor_deinit(void *cmd_exec_ctx);
 void cmd_execute_raw(void *cmd_exec_ctx, const char *cmd, const char *args,  cmd_additional_info_t *info);
-void cmd_execute_telegram(void *cmd_exec_ctx, void *teleCtx, telegram_update_t *info);
+void cmd_execute_telegram(void *cmd_exec_ctx, void *teleCtx, telegram_update_t *info, cmd_additional_info_t *cmd_info);
 
 #endif

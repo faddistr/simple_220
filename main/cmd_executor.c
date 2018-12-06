@@ -18,7 +18,7 @@ void cmd_execute_raw(void *cmd_exec_ctx, const char *cmd, const char *args,  cmd
 
 }
 
-void cmd_execute_telegram(void *cmd_exec_ctx, void *teleCtx, telegram_update_t *info)
+void cmd_execute_telegram(void *cmd_exec_ctx, void *teleCtx, telegram_update_t *info,  cmd_additional_info_t *cmd_info)
 {
 
 }

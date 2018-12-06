@@ -18,7 +18,8 @@
 #include "telegram.h"
 #include "config.h"
 #include "cmd_executor.h"
-#include "plug.h"
+#include "cmd_manager.h"
+
 
 #define CONFIG_BUTTON 25U
 
@@ -262,7 +263,7 @@ void app_main()
         err = nvs_flash_init();
     }
     ESP_ERROR_CHECK( err );
-    plug_init();
     cmd_init();
+    cmd_manager_register_all();
     initialise_wifi();
 }

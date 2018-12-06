@@ -14,7 +14,6 @@
 #include <sys/param.h>
 #include <driver/gpio.h>
 #include "ota.h"
-#include "plug.h"
 #include "httpd_back.h"
 #include "telegram.h"
 #include "config.h"
@@ -22,16 +21,6 @@
 
 #define CONFIG_BUTTON 25U
 
-#define EXAMPLE_WIFI_SSID "Astra"
-#define EXAMPLE_WIFI_PASS "act7j3act7j3"
-#if 1
-static config_t default_config = 
-{
-    .ssid = EXAMPLE_WIFI_SSID,
-    .password = EXAMPLE_WIFI_PASS,
-    .telegram_token = "695606106:AAGwCJRw6Y6xCXPTITX7Y8zGM70rg6O-Cyo",
-};
-#endif
 static const int CONNECTED_BIT = BIT0;
 static const int ESPTOUCH_DONE_BIT = BIT1;
 
@@ -278,10 +267,6 @@ void app_main()
         err = nvs_flash_init();
     }
     ESP_ERROR_CHECK( err );
-#if 1
-    config_save(&default_config);
-#endif
-    
     cmd = cmd_executor_init();
     initialise_wifi();
 }

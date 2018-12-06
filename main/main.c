@@ -13,15 +13,17 @@
 #include <nvs_flash.h>
 #include <sys/param.h>
 #include <driver/gpio.h>
-
+#include "ota.h"
+#include "plug.h"
 #include "httpd_back.h"
 #include "telegram.h"
 #include "config.h"
+#include "cmd_executor.h"
 
 #define CONFIG_BUTTON 25U
 
-#define EXAMPLE_WIFI_SSID "mitte WiFi"
-#define EXAMPLE_WIFI_PASS "Flash2016"
+#define EXAMPLE_WIFI_SSID "Astra"
+#define EXAMPLE_WIFI_PASS "act7j3act7j3"
 #if 1
 static config_t default_config = 
 {
@@ -40,6 +42,7 @@ static config_t config;
 static bool is_config = false;
 static void *teleCtx;
 static void *server;
+static void *cmd;
 
 
 static void smartconfig_task(void * parm);
@@ -59,13 +62,6 @@ static bool check_button_press(void)
     return gpio_get_level(CONFIG_BUTTON);
 }
 
-static telegram_kbrd_inline_btn_t kbrd_btns[] =
-{
-    {.text = "Fuck you", .callback_data = "Fuck_you"},
-    {.text = "Fuck you 2", .callback_data = "Fuck_you2"},
-    {}
-};
-
 static telegram_kbrd_t keyboard = 
 {
     .type = TELEGRAM_KBRD_INLINE,
@@ -76,34 +72,50 @@ static telegram_kbrd_t keyboard =
 
 static void telegram_new_message(void *teleCtx, telegram_update_t *info)
 {
-    ESP_LOGI(TAG, "New message: ID %f", info->id);
-
-    if (info->channel_post != NULL)
-    {
-        telegram_kbrd(teleCtx, info->channel_post->chat->id, info->channel_post->text, &keyboard);
-    }
-
-
-    if (info->callback_query != NULL)
-    {
-        ESP_LOGE(TAG, "CB data: %s", info->callback_query->data);
-    }
-
-    //telegram_send_text_message(teleCtx, chat_id, text);
-    //telegram_kbrd(teleCtx, chat_id, text, &keyboard);
+    cmd_execute_telegram(cmd, teleCtx, info);
 }
 
-static void httpd_back_new_message(void *ctx, httpd_arg_t *argv, uint32_t argc)
+static void httpd_back_send(void *ctx, void *buff, uint32_t buff_len)
 {
-    char answ_cmd[32] = {0};
+    if (buff_len == 0)
+    {
+        return;
+    }
 
-    snprintf(answ_cmd, sizeof(answ_cmd) - 1, "Count = %d\n", argc);
-    httpd_send_answ(ctx, answ_cmd, strlen(answ_cmd));
+    httpd_send_answ(ctx, buff, buff_len);
+}
+
+static void httpd_back_new_message(void *ctx, httpd_arg_t *argv, uint32_t argc, void *sess)
+{
+    uint32_t i;
+    cmd_additional_info_t *info = calloc(1, sizeof(cmd_additional_info_t));
+
+    if (info == NULL)
+    {
+        return;
+    }
+
+    info->transport = CMD_SRC_HTTPB;
+    info->send_cb = httpd_back_send;
+    info->arg = ctx;
+    info->user_ses = sess;
+    info->config = config;
+    for (i = 0; i < argc; i++)
+    {
+        cmd_execute_raw(cmd, argv[i].key, argv[i].value, info);
+        httpd_set_sess(ctx, info->user_ses);
+        if (info->sys_config_changed)
+        {
+            config_save(&info->config);
+        }
+    }
+
+    httpd_send_answ(ctx, NULL, 0);
+    free(info);
 }
 
 static esp_err_t event_handler(void *ctx, system_event_t *event)
 {
-
     switch(event->event_id) {
         case SYSTEM_EVENT_STA_START:
             ESP_LOGI(TAG, "SYSTEM_EVENT_STA_START");
@@ -261,6 +273,7 @@ void app_main()
 #if 1
     config_save(&default_config);
 #endif
-     
+    
+    cmd = cmd_executor_init();
     initialise_wifi();
 }

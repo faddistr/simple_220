@@ -54,6 +54,7 @@ static esp_err_t cmd_handler(httpd_req_t *req)
 {
     httpd_back_internal_t *ctx = (httpd_back_internal_t *)req->user_ctx;
     esp_err_t res;
+    bool is_authed = false;
     char *buf = NULL;
     uint32_t i = 0;
     uint32_t arg_count;
@@ -136,7 +137,7 @@ static esp_err_t cmd_handler(httpd_req_t *req)
 
     arg_count++;
 
-    ctx->cmd_cb(req, arg_array, arg_count);
+    ctx->cmd_cb(req, arg_array, arg_count, req->sess_ctx);
     free(buf);
     free(arg_array);
     return ESP_OK;
@@ -148,10 +149,25 @@ static void httpd_free_res(httpd_back_internal_t *ctx)
     free(ctx);
 }
 
+void httpd_set_sess(void *req_ptr, void *sess)
+{
+    esp_err_t res;
+    httpd_back_session_t *ses_ptr;
+    httpd_req_t *req = (httpd_req_t *)req_ptr;
+
+    if (req_ptr == NULL)
+    {
+        ESP_LOGW(TAG, "httpd_set_auth: Wrong argument");
+        return;
+    }
+
+    req->sess_ctx = sess;
+}
+
 void httpd_send_answ(void *req_ptr, const char *str, uint32_t len)
 {
     esp_err_t res;
-    httpd_req_t *req = NULL;
+    httpd_req_t *req = (httpd_req_t *)req_ptr;
 
     if (req_ptr == NULL)
     {
@@ -159,12 +175,10 @@ void httpd_send_answ(void *req_ptr, const char *str, uint32_t len)
         return;
     }
 
-    req = (httpd_req_t *)req_ptr;
-
-    res = httpd_resp_send(req, str, len);
+    res = httpd_resp_send_chunk(req, str, len);
     if (res != ESP_OK)
     {
-        ESP_LOGW(TAG, "httpd_resp_send failed %d", res);
+        ESP_LOGW(TAG, "httpd_resp_send_chunk failed %d", res);
     }
 }
 

@@ -63,8 +63,9 @@ static void telegram_new_message(void *teleCtx, telegram_update_t *info)
 
     cmd_info->transport = CMD_SRC_TELEGRAM;
     cmd_info->sys_config = &config;
+    cmd_info->arg = teleCtx;
 
-    cmd_execute_telegram(teleCtx, info, cmd_info);
+    //cmd_execute(info, cmd_info);
     if (cmd_info->sys_config_changed)
     {
         config_save(cmd_info->sys_config);
@@ -100,7 +101,7 @@ static void httpd_back_new_message(void *ctx, httpd_arg_t *argv, uint32_t argc, 
     info->sys_config = &config;
     for (i = 0; i < argc; i++)
     {
-        cmd_execute_raw(argv[i].key, argv[i].value, info);
+        cmd_execute(argv[i].key, argv[i].value, info);
         httpd_set_sess(ctx, info->user_ses);
         if (info->sys_config_changed)
         {

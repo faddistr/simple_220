@@ -146,7 +146,7 @@ void cmd_deinit(void)
 	}
 }
 
-void cmd_execute_raw(const char *str, const char *args,  cmd_additional_info_t *info)
+void cmd_execute(const char *cmd_name, void *args, cmd_additional_info_t *info)
 {
 	cmd_list_t *cmd_mem = NULL;
 	if (!cmd.is_inited)
@@ -161,18 +161,13 @@ void cmd_execute_raw(const char *str, const char *args,  cmd_additional_info_t *
 		vTaskDelay(pdMS_TO_TICKS(1));
 	}
 
-	cmd_mem = cmd_search(str);
+	cmd_mem = cmd_search(cmd_name);
 	if (cmd_mem != NULL)
 	{
-		if (cmd_mem->descr->raw_cb != NULL)
+		if (cmd_mem->descr->cmd_cb != NULL)
 		{
-			cmd_mem->descr->raw_cb(str, args, info, cmd_mem->descr->private);
+			cmd_mem->descr->cmd_cb(cmd_name, args, info, cmd_mem->descr->private);
 		}
 	}
 	xSemaphoreGive(cmd.sem);
-}
-
-void cmd_execute_telegram(void *teleCtx, telegram_update_t *info,  cmd_additional_info_t *cmd_info)
-{
-	//TODO
 }

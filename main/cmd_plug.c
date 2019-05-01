@@ -2,8 +2,12 @@
 #include <stdbool.h>
 #include <string.h>
 #include <stdio.h>
+#include <esp_log.h>
 #include "plug.h"
 #include "cmd_executor.h"
+#include "httpd_back.h"
+
+static const char *TAG="CPLUG";
 
 static void cmd_plug_cb(const char *cmd_name, void *args, cmd_additional_info_t *info, void *private);
 
@@ -58,11 +62,19 @@ static void cmd_plug_cb_httpb(const char *cmd_name, void *args, cmd_additional_i
 		token = strtok_r(NULL, " ", &save_ptr);
 	} while (token != NULL);
 
-	plug_set_key(key, !!val);
+	if (is_key && is_val)
+	{
+		plug_set_key(key, !!val);
+		httpd_send_answ(info->args, "OK", 2);
+	} else
+	{
+		httpd_send_answ(info->args, "FAIL", 4);
+	}
 }
 
 static void cmd_plug_cb(const char *cmd_name, void *args, cmd_additional_info_t *info, void *private)
 {
+	ESP_LOGI(TAG, "SRC: %X", info->transport);
 	switch (info->transport)
 	{
 		case CMD_SRC_HTTPB:

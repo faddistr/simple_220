@@ -15,7 +15,6 @@ typedef void(*send_cb_t)(void *arg, void *buff, uint32_t buff_len);
 typedef struct
 {
 	cmd_src_tansport_t transport;
-	send_cb_t send_cb;
 	void *arg; 
  	void *user_ses;
  	config_t *sys_config;

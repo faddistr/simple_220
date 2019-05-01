@@ -34,7 +34,6 @@ static bool is_config = false;
 static void *teleCtx;
 static void *server;
 
-
 static void smartconfig_task(void * parm);
 static void sc_callback(smartconfig_status_t status, void *pdata);
 
@@ -65,23 +64,13 @@ static void telegram_new_message(void *teleCtx, telegram_update_t *info)
     cmd_info->sys_config = &config;
     cmd_info->arg = teleCtx;
 
-    //cmd_execute(info, cmd_info);
+    cmd_execute(info, cmd_info);
     if (cmd_info->sys_config_changed)
     {
         config_save(cmd_info->sys_config);
     }
 
     free(cmd_info);
-}
-
-static void httpd_back_send(void *ctx, void *buff, uint32_t buff_len)
-{
-    if (buff_len == 0)
-    {
-        return;
-    }
-
-    httpd_send_answ(ctx, buff, buff_len);
 }
 
 static void httpd_back_new_message(void *ctx, httpd_arg_t *argv, uint32_t argc, void *sess)
@@ -95,7 +84,6 @@ static void httpd_back_new_message(void *ctx, httpd_arg_t *argv, uint32_t argc, 
     }
 
     info->transport = CMD_SRC_HTTPB;
-    info->send_cb = httpd_back_send;
     info->arg = ctx;
     info->user_ses = sess;
     info->sys_config = &config;
@@ -109,7 +97,6 @@ static void httpd_back_new_message(void *ctx, httpd_arg_t *argv, uint32_t argc, 
         }
     }
 
-    httpd_send_answ(ctx, NULL, 0);
     free(info);
 }
 

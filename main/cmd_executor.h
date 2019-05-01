@@ -19,9 +19,10 @@ typedef struct
  	void *user_ses;
  	config_t *sys_config;
  	bool sys_config_changed;
+ 	void *cmd_data;
 } cmd_additional_info_t;
 
-typedef void(* cmde_cb_t)(const char *cmd_name, void *args, cmd_additional_info_t *info, void *private);
+typedef void(* cmde_cb_t)(const char *cmd_name, cmd_additional_info_t *info, void *private);
 
 typedef struct
 {
@@ -32,6 +33,6 @@ typedef struct
 
 void cmd_init(void);
 bool cmd_register(cmd_command_descr_t *descr);
-void cmd_execute(const char *cmd_name, void *args,  cmd_additional_info_t *info);
+bool cmd_execute(const char *cmd_name, cmd_additional_info_t *info);
 
 #endif

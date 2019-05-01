@@ -19,6 +19,7 @@
 #include "config.h"
 #include "cmd_executor.h"
 #include "cmd_manager.h"
+#include "ram_var_stor.h"
 
 
 #define CONFIG_BUTTON 25U
@@ -28,8 +29,8 @@ static const int ESPTOUCH_DONE_BIT = BIT1;
 
 static const char *TAG="MAIN";
 
-static EventGroupHandle_t s_wifi_event_group;
-static config_t config;
+EventGroupHandle_t s_wifi_event_group;
+static config_t config = {};
 static bool is_config = false;
 static void *teleCtx;
 static void *server;
@@ -53,21 +54,63 @@ static bool check_button_press(void)
 
 static void telegram_new_message(void *teleCtx, telegram_update_t *info)
 {
-    cmd_additional_info_t *cmd_info = calloc(1, sizeof(cmd_additional_info_t));
+    char *end = NULL;
+    cmd_additional_info_t *cmd_info = NULL;
+    telegram_chat_message_t *msg = NULL;
+    telegram_int_t chat_id = -1;
+    bool res = false;
 
     if (info == NULL)
     {
         return;
     }
 
+    msg = telegram_get_message(info);
+
+    if ((msg == NULL) || (msg->text == NULL))
+    {
+        return;
+    }
+
+    chat_id = telegram_get_chat_id(msg);
+    if (chat_id == -1)
+    {
+        return;
+    }
+
+    cmd_info = calloc(1, sizeof(cmd_additional_info_t));
+    end = strchr(msg->text, ' ');
+
+    ESP_LOGI(TAG, "Telegram message: %s from: %f", msg->text, chat_id);
+
     cmd_info->transport = CMD_SRC_TELEGRAM;
     cmd_info->sys_config = &config;
     cmd_info->arg = teleCtx;
+    cmd_info->cmd_data = info;
 
-    cmd_execute(info, cmd_info);
-    if (cmd_info->sys_config_changed)
+    if (end != NULL)
+    {
+        char *cmd = NULL;
+
+        *end = '\0';
+        cmd = strdup(msg->text);
+        *end = ' ';
+
+        res = cmd_execute(cmd, cmd_info);
+        free(cmd);
+    } else
+    {
+        res = cmd_execute(msg->text, cmd_info);
+    }
+
+    if ((res == true) && (cmd_info->sys_config_changed))
     {
         config_save(cmd_info->sys_config);
+    }
+
+    if (!res)
+    {
+        telegram_send_text_message(cmd_info->arg, chat_id, "Command not found!");
     }
 
     free(cmd_info);
@@ -89,8 +132,10 @@ static void httpd_back_new_message(void *ctx, httpd_arg_t *argv, uint32_t argc, 
     info->sys_config = &config;
     for (i = 0; i < argc; i++)
     {
-        cmd_execute(argv[i].key, argv[i].value, info);
+        info->cmd_data = &argv[i].value;
+        cmd_execute(argv[i].key, info);
         httpd_set_sess(ctx, info->user_ses);
+
         if (info->sys_config_changed)
         {
             config_save(info->sys_config);
@@ -116,16 +161,19 @@ static esp_err_t event_handler(void *ctx, system_event_t *event)
             break;
 
         case SYSTEM_EVENT_STA_GOT_IP:
-            ESP_LOGI(TAG, "SYSTEM_EVENT_STA_GOT_IP");
-            ESP_LOGI(TAG, "Got IP: '%s'",
-                    ip4addr_ntoa(&event->event_info.got_ip.ip_info.ip));
+        {
+            char *tmp = strdup(ip4addr_ntoa(&event->event_info.got_ip.ip_info.ip));
+            ESP_LOGI(TAG, "SYSTM_EVENT_STA_GOT_IP");
             xEventGroupSetBits(s_wifi_event_group, CONNECTED_BIT);
+            var_add("WIFI_CLIENT_IP", tmp);
+            free(tmp);
             teleCtx = telegram_init(config.telegram_token, telegram_new_message);
 
             /* Start the web server */
             if (server == NULL) {
                 server = httpd_start_webserver(httpd_back_new_message);
             }
+        }
             break;
 
         case SYSTEM_EVENT_STA_DISCONNECTED:
@@ -138,7 +186,10 @@ static esp_err_t event_handler(void *ctx, system_event_t *event)
                 httpd_stop_webserver(server);
                 server = NULL;
             }
-            telegram_stop(&teleCtx);
+            if (teleCtx)
+            {
+                telegram_stop(&teleCtx);
+            }
             break;
         default:
             break;
@@ -210,7 +261,6 @@ static void initialise_wifi(void)
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
 
-    s_wifi_event_group = xEventGroupCreate();
 
     tcpip_adapter_init();
     ESP_ERROR_CHECK(esp_event_loop_init(event_handler, NULL));
@@ -251,7 +301,24 @@ void app_main()
         err = nvs_flash_init();
     }
     ESP_ERROR_CHECK( err );
+    var_init();
+
+    //config_save(&config);
+    s_wifi_event_group = xEventGroupCreate();
+
+    if (s_wifi_event_group == NULL)
+    {
+        ESP_LOGW(TAG, "Failed to create s_wifi_event_group  ...");
+    } else
+    {
+        ESP_LOGW(TAG, "Succesfully created s_wifi_event_group  ...");
+    }
+
     cmd_init();
     cmd_manager_register_all();
+
+
+
+
     initialise_wifi();
 }

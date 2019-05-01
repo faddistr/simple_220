@@ -4,11 +4,61 @@
 #include <nvs.h>
 #include <string.h>
 #include "config.h"
+#include "ram_var_stor.h"
 
 #define STORAGE_NAMESPACE "STORAGE"
 #define CONFIG_NAME "wifi_config"
+#define CONFIG_NAME_VARS "vars"
+
 
 static const char *TAG="config";
+#if 0
+struct cfg_var_list;
+
+typedef struct cfg_var_list
+{
+    char *key;
+    char *value;
+    struct  cfg_var_list *next;
+} cfg_var_list_t;
+
+static void config_save_vars_cb(void *ctx, char *key, char *value)
+{
+}
+
+esp_err_t config_save_vars(void)
+{
+    esp_err_t err;
+    nvs_handle handle;
+
+    ESP_LOGI(TAG, "Saving vars...");
+    err = nvs_open(STORAGE_NAMESPACE, NVS_READWRITE, &handle);
+    if (err != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Failed open storage! %d", err);
+        return;
+    }
+
+    do
+    {
+        err = nvs_set_blob(handle, CONFIG_NAME_VARS, config, sizeof(config_t));
+        if (err != ESP_OK)
+        {
+            ESP_LOGW(TAG, "Failed save vars! %d", err);
+            break;
+        }
+
+        err = nvs_commit(handle);
+        if (err != ESP_OK)
+        {
+            ESP_LOGW(TAG, "Failed commit vars! %d", err);
+        }
+    } while(0);
+
+    nvs_close(handle);
+
+}
+#endif
 
 esp_err_t config_load(config_t *config)
 {
@@ -44,7 +94,17 @@ esp_err_t config_load(config_t *config)
 	    if (err != ESP_OK)
 	    {
 	       	ESP_LOGW(TAG, "Failed read config! %d", err);
-	    }
+	    } else
+        {
+            char tmp[16] = {0};
+
+            var_add("WIFI_SSID", config->ssid);
+            var_add("WIFI_PASSWORD", config->password);
+            var_add("HTTP_PASSWORD", config->user_pass);
+            var_add("TELEGRAM_TOKEN", config->telegram_token);
+            sprintf(tmp, "%u", saved_size);
+            var_add("FLASH_CONFIG_SIZE", tmp);
+        }
 	} while(0);
 
 	nvs_close(handle);

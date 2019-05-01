@@ -7,9 +7,9 @@
 #include "cmd_executor.h"
 #include "httpd_back.h"
 
-static const char *TAG="CPLUG";
+static const char *TAG="C_PLUG";
 
-static void cmd_plug_cb(const char *cmd_name, void *args, cmd_additional_info_t *info, void *private);
+static void cmd_plug_cb(const char *cmd_name, cmd_additional_info_t *info, void *private);
 
 static cmd_command_descr_t cmd_plug_descr =
 {
@@ -65,20 +65,20 @@ static void cmd_plug_cb_httpb(const char *cmd_name, void *args, cmd_additional_i
 	if (is_key && is_val)
 	{
 		plug_set_key(key, !!val);
-		httpd_send_answ(info->args, "OK", 2);
+		httpd_send_answ(info->arg, "OK", 2);
 	} else
 	{
-		httpd_send_answ(info->args, "FAIL", 4);
+		httpd_send_answ(info->arg, "FAIL", 4);
 	}
 }
 
-static void cmd_plug_cb(const char *cmd_name, void *args, cmd_additional_info_t *info, void *private)
+static void cmd_plug_cb(const char *cmd_name, cmd_additional_info_t *info, void *private)
 {
 	ESP_LOGI(TAG, "SRC: %X", info->transport);
 	switch (info->transport)
 	{
 		case CMD_SRC_HTTPB:
-			cmd_plug_cb_httpb(cmd_name, args, info, private);
+			cmd_plug_cb_httpb(cmd_name, info->cmd_data, info, private);
 			break;
 
 		default:

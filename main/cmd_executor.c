@@ -23,7 +23,7 @@ typedef struct
 } cmd_int_t;
 
 static const char *TAG="CMD";
-static cmd_int_t cmd;
+static cmd_int_t cmd ;
 
 
 static cmd_list_t *cmd_search(const char *cmd_name)
@@ -50,12 +50,14 @@ static cmd_list_t *cmd_search(const char *cmd_name)
 
 void cmd_init(void)
 {
-	cmd.sem = xSemaphoreCreateMutex();
+	cmd.sem = xSemaphoreCreateBinary();
 	if (cmd.sem == NULL)
 	{
 		ESP_LOGE(TAG, "No mem!");
 		return;
 	}
+
+	xSemaphoreGive(cmd.sem);
 
 	cmd.is_inited = true;
 	ESP_LOGI(TAG, "CMD inited");
@@ -76,6 +78,9 @@ bool cmd_register(cmd_command_descr_t *descr)
 		return false;
 	}
 
+	ESP_LOGI(TAG, "Register %s", descr->name);
+
+
 	while(!xSemaphoreTake(cmd.sem, CMD_MAX_BLOCK_TIME))
 	{
 		ESP_LOGW(TAG, "cmd_register semaphore wait > CMD_MAX_BLOCK_TIME");
@@ -95,7 +100,7 @@ bool cmd_register(cmd_command_descr_t *descr)
 		cmd.cmds_head->descr = descr;
 	} else
 	{
-		cmd_list_t *iter = cmd.cmds_head->next;
+		cmd_list_t *iter = cmd.cmds_head;
 		cmd_list_t *temp = calloc(1, sizeof(cmd_list_t));
 		if (temp == NULL)
 		{
@@ -146,13 +151,15 @@ void cmd_deinit(void)
 	}
 }
 
-void cmd_execute(const char *cmd_name, void *args, cmd_additional_info_t *info)
+bool cmd_execute(const char *cmd_name, cmd_additional_info_t *info)
 {
+	bool ret = false;
 	cmd_list_t *cmd_mem = NULL;
+	
 	if (!cmd.is_inited)
 	{
 		ESP_LOGE(TAG, "Not inited");
-		return;
+		return false;
 	}
 
 	while(!xSemaphoreTake(cmd.sem, CMD_MAX_BLOCK_TIME))
@@ -161,13 +168,21 @@ void cmd_execute(const char *cmd_name, void *args, cmd_additional_info_t *info)
 		vTaskDelay(pdMS_TO_TICKS(1));
 	}
 
+	ESP_LOGI(TAG, "Looking for %s", cmd_name);
 	cmd_mem = cmd_search(cmd_name);
 	if (cmd_mem != NULL)
 	{
 		if (cmd_mem->descr->cmd_cb != NULL)
 		{
-			cmd_mem->descr->cmd_cb(cmd_name, args, info, cmd_mem->descr->private);
+			ESP_LOGI(TAG, "Executing...");
+			cmd_mem->descr->cmd_cb(cmd_name, info, cmd_mem->descr->private);
+			ret = true;
 		}
+	} else
+	{
+		ESP_LOGW(TAG, "Command not found");
 	}
+	
 	xSemaphoreGive(cmd.sem);
+	return ret;
 }

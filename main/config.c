@@ -98,12 +98,12 @@ esp_err_t config_load(config_t *config)
         {
             char tmp[16] = {0};
 
-            var_add("WIFI_SSID", config->ssid);
-            var_add("WIFI_PASSWORD", config->password);
-            var_add("HTTP_PASSWORD", config->user_pass);
-            var_add("TELEGRAM_TOKEN", config->telegram_token);
+            var_add_attr("WIFI_SSID", config->ssid, true);
+            var_add_attr("WIFI_PASSWORD", config->password, true);
+            var_add_attr("HTTP_PASSWORD", config->user_pass, true);
+            var_add_attr("TELEGRAM_TOKEN", config->telegram_token, true);
             sprintf(tmp, "%u", saved_size);
-            var_add("FLASH_CONFIG_SIZE", tmp);
+            var_add_attr("FLASH_CONFIG_SIZE", tmp, false);
         }
 	} while(0);
 

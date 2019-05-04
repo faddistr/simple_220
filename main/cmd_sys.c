@@ -48,6 +48,7 @@ static void cmd_getvar_cb_telegram(const char *cmd_name, cmd_additional_info_t *
     }
 
 	telegram_send_text_message(info->arg, chat_id, var_value);
+	telegram_send_text_message(info->arg, chat_id, var_value);
 
     free(var_value);
 }

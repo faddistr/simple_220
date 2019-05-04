@@ -3,56 +3,117 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <freertos/task.h>
+#include "tlist.h"
+
 #include "ram_var_stor.h"
 
 #define VAR_STOR_MAX_BLOCK_TIME 250U
 
-
-struct var_list;
-
-typedef struct var_list
+typedef struct
 {
 	char *key;
 	char *value;
-	struct  var_list *next;
 	bool save_to_flash;
-} var_list_t;
+} var_elem_t;
 
 typedef struct
 {
 	SemaphoreHandle_t sem;
-	var_list_t *head;
+	void *list;
 	bool is_inited;
 } var_int_t;
 
 static const char *TAG="RAM_STOR";
 static var_int_t var;
 
-static var_list_t *var_search(char *var_name)
+typedef struct
 {
-	var_list_t *iter = var.head;
+	char *var_name;
+	var_elem_t *result;
+	bool del;
+} var_search_helper_t;
 
-	if (var_name == NULL)
+typedef struct
+{
+	void *ctx;
+	save_to_flash_cb_t cb;
+} var_save_helper_t;
+
+static void var_free(void *ctx, void *data)
+{
+	var_elem_t *elem = (var_elem_t *)data;
+
+
+	free(elem->key);
+	free(elem->value);
+	free(elem);
+}
+
+static bool var_save_to_flash(void *ctx, void *data, void *tlist_el)
+{
+	var_elem_t *elem = (var_elem_t *)data;
+	var_save_helper_t *hnd = (var_save_helper_t *)ctx;
+
+	if (elem->save_to_flash)
+	{
+		hnd->cb(hnd->ctx, elem->key, elem->value);
+	}
+
+	return false;	
+}
+
+static bool var_search_list(void *ctx, void *data, void *tlist_el)
+{
+	var_elem_t *elem = (var_elem_t *)data;
+	var_search_helper_t *hnd = (var_search_helper_t *)ctx;
+
+	if (!strcmp(hnd->var_name, elem->key))
+	{
+		hnd->result = elem;
+		if (hnd->del)
+		{
+			var_free(elem, NULL);
+			tlist_del_one(tlist_el);
+		}
+		return true;
+	}
+
+	return false;
+}
+
+static var_elem_t *var_search_full(char *var_name, bool del)
+{
+	var_search_helper_t hnd = {};
+
+	if (var.list == NULL) 
 	{
 		return NULL;
 	}
 
-	while (iter != NULL)
-	{
-		if (!strcmp(var_name, iter->key))
-		{
-			return iter;
-		}
-
-		iter = iter->next;
-	}
-
-	return NULL;
+	hnd.var_name = var_name;
+	hnd.del = del;
+	tlist_for_each(var.list, var_search_list, &hnd);
+	return hnd.result;
 } 
 
+static var_elem_t *var_search(char *var_name)
+{
+	return var_search_full(var_name, false);
+}
+
+static void var_wait_for_sem(void)
+{
+	while(!xSemaphoreTake(var.sem, VAR_STOR_MAX_BLOCK_TIME))
+	{
+		ESP_LOGW(TAG, "semaphore wait > VAR_STOR_MAX_BLOCK_TIME");
+		vTaskDelay(pdMS_TO_TICKS(1));
+	}
+}
 
 void var_add_attr(char *var_name, char *var_value, bool save_to_flash)
 {
+	var_elem_t *elem;
+
 	if ((var_name == NULL) || (var_value == NULL))
 	{
 		return;
@@ -66,58 +127,54 @@ void var_add_attr(char *var_name, char *var_value, bool save_to_flash)
 		return;
 	}
 
-	while(!xSemaphoreTake(var.sem, VAR_STOR_MAX_BLOCK_TIME))
+	var_wait_for_sem();
+	elem = var_search(var_name);
+	if (elem == NULL)
 	{
-		ESP_LOGW(TAG, "VAR_ADD semaphore wait > VAR_STOR_MAX_BLOCK_TIME");
-		vTaskDelay(pdMS_TO_TICKS(1));
-	}
-
-	if (var.head == NULL)
-	{
-		var.head = calloc(1, sizeof(var_list_t));
-		if (var.head == NULL)
+		elem = calloc(1, sizeof(var_elem_t));
+		if (elem == NULL)
 		{
-			xSemaphoreGive(var.sem);
-			ESP_LOGE(TAG, "Register - no mem");
-			return false;
-		}
-
-		var.head->key = strdup(var_name);
-		var.head->value = strdup(var_value);
-		var.head->save_to_flash = save_to_flash;
-	} else
-	{
-		var_list_t *var_ptr = var_search(var_name);
-		if (var_ptr != NULL)
-		{
-			free(var_ptr->value);
-			var_ptr->value = strdup(var_value);
-
+			ESP_LOGE(TAG, "var_add_attr: no mem!!!");
 		} else
 		{
-			var_list_t *iter = var.head;
-			var_list_t *temp = calloc(1, sizeof(var_list_t));
-			if (temp == NULL)
+			elem->key = strdup(var_name);
+			elem->save_to_flash = save_to_flash;
+			var.list = tlist_add(var.list, elem);
+
+			if (var.list == NULL)
 			{
-				xSemaphoreGive(var.sem);
-				ESP_LOGE(TAG, "Register - no mem");
-				return false;
+				ESP_LOGE(TAG, "Failed while adding value");
 			}
-
-			temp->key = strdup(var_name);
-			temp->value = strdup(var_value);
-			temp->save_to_flash = save_to_flash;
-
-
-			while (iter->next != NULL)
-			{
-				iter = iter->next;
-			}
-
-			iter->next = temp;
 		}
+	} else
+	{
+		free(elem->value);
 	}
 
+	if (elem != NULL)
+	{
+		elem->value = strdup(var_value);
+	}
+	xSemaphoreGive(var.sem);
+}
+
+void var_del(char *var_name)
+{
+	if (var_name == NULL)
+	{
+		return;
+	}
+
+	ESP_LOGI(TAG, "VAR_DEL: %s", var_name);
+
+	if (!var.is_inited)
+	{
+		ESP_LOGE(TAG, "Not inited");
+		return;
+	}	
+
+	var_wait_for_sem();
+	var_search_full(var_name, true);
 	xSemaphoreGive(var.sem);
 }
 
@@ -126,12 +183,11 @@ void var_add(char *var_name, char *var_value)
 	var_add_attr(var_name, var_value, false);
 }
 
-
 char *var_get(char *var_name)
 {
+	var_elem_t *var_ptr = NULL;
 	char *res = NULL;
-	var_list_t *var_ptr;
-	
+
 	if (var_name == NULL)
 	{
 		return NULL;
@@ -145,18 +201,12 @@ char *var_get(char *var_name)
 		return NULL;
 	}
 
-	while(!xSemaphoreTake(var.sem, VAR_STOR_MAX_BLOCK_TIME))
-	{
-		ESP_LOGW(TAG, "VAR_GET semaphore wait > VAR_STOR_MAX_BLOCK_TIME");
-		vTaskDelay(pdMS_TO_TICKS(1));
-	}
-
+	var_wait_for_sem();
 	var_ptr = var_search(var_name);
 	if (var_ptr)
 	{
 		res = strdup(var_ptr->value);
 	}
-
 
 	xSemaphoreGive(var.sem);
 	return res;
@@ -172,7 +222,7 @@ void var_init(void)
 	}
 
 	xSemaphoreGive(var.sem);
-
+	var.list = NULL;
 
 	var.is_inited = true;
 	ESP_LOGI(TAG, "Inited");
@@ -181,8 +231,8 @@ void var_init(void)
 
 void var_save(void *ctx, save_to_flash_cb_t cb)
 {
-	var_list_t *iter;
-	
+	var_save_helper_t hnd; 
+
 	if (cb == NULL)
 	{
 		ESP_LOGW(TAG, "VAR_SAVE bad parrams");
@@ -194,54 +244,22 @@ void var_save(void *ctx, save_to_flash_cb_t cb)
 		return;
 	}
 
-	while(!xSemaphoreTake(var.sem, VAR_STOR_MAX_BLOCK_TIME))
-	{
-		ESP_LOGW(TAG, "VAR_GET semaphore wait > VAR_STOR_MAX_BLOCK_TIME");
-		vTaskDelay(pdMS_TO_TICKS(1));
-	}
 
-	iter = var.head;
-
-	while(iter)
-	{
-		if (iter->save_to_flash)
-		{
-			cb(ctx, iter->key, iter->value);
-		}
-
-		iter = iter->next;
-	}
-
+	var_wait_for_sem();
+	tlist_for_each(var.list, var_save_to_flash, &hnd);
 	xSemaphoreGive(var.sem);
 }
 
 void var_deinit(void)
 {
-	var_list_t *temp;
-	var_list_t *iter;
-
 	if (!var.is_inited)
 	{
 		return;
 	}
 
+	var_wait_for_sem();
+	tlist_free_all(var.list, var_free, NULL);
+	var.list = NULL;
 	var.is_inited = false;
 	vSemaphoreDelete(var.sem);
-	if (var.head != NULL)
-	{
-		iter = var.head->next;
-		free(var.head);
-		var.head = NULL;
-		if (iter != NULL)
-		{
-			while (iter->next != NULL)
-			{
-				temp = iter;
-				iter = iter->next;
-				free(temp->key);
-				free(temp->value);
-				free(temp);
-			}
-		}
-	}
 }

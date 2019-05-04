@@ -17,7 +17,7 @@ static cmd_command_descr_t cmd_plug_descr =
 	.cmd_cb = cmd_plug_cb,
 };
 
-static void cmd_plug_cb_httpb(const char *cmd_name, void *args, cmd_additional_info_t *info, void *private)
+static bool cmd_plug(void *args)
 {
 	uint32_t key = 0;
 	uint32_t val = 0;
@@ -28,7 +28,7 @@ static void cmd_plug_cb_httpb(const char *cmd_name, void *args, cmd_additional_i
 
 	if (token == NULL)
 	{
-		return;
+		return false;
 	}
 
 	do
@@ -65,10 +65,40 @@ static void cmd_plug_cb_httpb(const char *cmd_name, void *args, cmd_additional_i
 	if (is_key && is_val)
 	{
 		plug_set_key(key, !!val);
+		return true;
+	} 
+	
+	return false;
+}
+
+static void cmd_plug_cb_httpb(const char *cmd_name, cmd_additional_info_t *info, void *private)
+{
+	if (cmd_plug(info->cmd_data))
+	{
 		httpd_send_answ(info->arg, "OK", 2);
 	} else
 	{
 		httpd_send_answ(info->arg, "FAIL", 4);
+	}
+}
+
+static void cmd_plug_cb_telegram(const char *cmd_name, cmd_additional_info_t *info, void *private)
+{
+	telegram_chat_message_t *msg = telegram_get_message((telegram_update_t *)info->cmd_data);
+    telegram_int_t chat_id = telegram_get_chat_id(msg);
+
+    if ((msg == NULL) || (chat_id == -1))
+    {
+    	ESP_LOGW(TAG, "Bad params!");
+    	return;
+    }
+
+	if (cmd_plug(msg->text))
+	{
+		telegram_send_text_message(info->arg, chat_id, "OK");
+	} else
+	{
+		telegram_send_text_message(info->arg, chat_id, "FAIL");
 	}
 }
 
@@ -78,7 +108,11 @@ static void cmd_plug_cb(const char *cmd_name, cmd_additional_info_t *info, void 
 	switch (info->transport)
 	{
 		case CMD_SRC_HTTPB:
-			cmd_plug_cb_httpb(cmd_name, info->cmd_data, info, private);
+			cmd_plug_cb_httpb(cmd_name, info, private);
+			break;
+
+		case CMD_SRC_TELEGRAM:
+			cmd_plug_cb_telegram(cmd_name, info, private);
 			break;
 
 		default:

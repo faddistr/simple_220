@@ -12,53 +12,162 @@
 
 
 static const char *TAG="config";
-#if 0
-struct cfg_var_list;
 
-typedef struct cfg_var_list
+typedef struct
 {
-    char *key;
-    char *value;
-    struct  cfg_var_list *next;
-} cfg_var_list_t;
+    uint8_t *ptr;
+    size_t cur_offset;
+} config_save_vars_helper_t;
 
-static void config_save_vars_cb(void *ctx, char *key, char *value)
+
+static void config_calculate_size_cb(void *ctx, char *key, char *value)
 {
+    size_t *total_size = (size_t *)ctx;
+    *total_size = *total_size + strlen(key) + strlen(value) + 2;
+    ESP_LOGI(TAG, "Save to flash: %s = %s (%d)", key, value, *total_size);
 }
 
-esp_err_t config_save_vars(void)
+static void config_list_to_array_cb(void *ctx, char *key, char *value)
+{
+    config_save_vars_helper_t *hnd = (config_save_vars_helper_t *)ctx;
+    strcpy((char *)&hnd->ptr[hnd->cur_offset], key);
+    hnd->cur_offset += strlen(key) + 1;
+
+    strcpy((char *)&hnd->ptr[hnd->cur_offset], value);
+    hnd->cur_offset += strlen(value) + 1;
+
+    ESP_LOGI(TAG, "Cpy to arr: %s = %s (%d)", key, value, hnd->cur_offset);
+}
+
+static void config_add_vars(uint8_t *src, size_t total_size)
+{
+    size_t len = 0;
+    char *key;
+    char *value;
+
+    while (total_size)
+    {
+        key = (char *)src;
+        len = strlen(key) + 1;
+        if (total_size <= len)
+        {
+            break;
+        }
+
+        total_size -= len;
+        src += len;
+        value = (char *)src;
+        len = strlen(value) + 1;
+        if (total_size < len)
+        {
+            break;
+        }
+
+        total_size -= len;
+        src += len;
+
+        var_add_attr(key, value, true);
+    }
+}
+
+void config_save_vars(void)
 {
     esp_err_t err;
     nvs_handle handle;
+    config_save_vars_helper_t hnd = {};
+    volatile size_t total_size = 0;
+
+    var_save(&total_size, config_calculate_size_cb);
+    hnd.ptr = calloc(total_size, sizeof(uint8_t));
+    if (hnd.ptr == NULL)
+    {
+        ESP_LOGE(TAG, "config_save_vars no mem!");
+        return;
+    }
+    var_save(&hnd, config_list_to_array_cb);
 
     ESP_LOGI(TAG, "Saving vars...");
     err = nvs_open(STORAGE_NAMESPACE, NVS_READWRITE, &handle);
     if (err != ESP_OK)
     {
         ESP_LOGW(TAG, "Failed open storage! %d", err);
-        return;
     }
 
-    do
+    if (err == ESP_OK)
     {
-        err = nvs_set_blob(handle, CONFIG_NAME_VARS, config, sizeof(config_t));
+        err = nvs_set_blob(handle, CONFIG_NAME_VARS, hnd.ptr, total_size);
         if (err != ESP_OK)
         {
-            ESP_LOGW(TAG, "Failed save vars! %d", err);
-            break;
+            ESP_LOGW(TAG, "Failed set blob! %d", err);
         }
+    }
 
+    if (err == ESP_OK)
+    {
         err = nvs_commit(handle);
         if (err != ESP_OK)
         {
             ESP_LOGW(TAG, "Failed commit vars! %d", err);
         }
-    } while(0);
-
+    }
+    
+    free(hnd.ptr);
     nvs_close(handle);
-
+    return;
 }
-#endif
+
+
+esp_err_t config_load_vars(void)
+{
+    esp_err_t err = ESP_OK;
+    nvs_handle handle;
+    size_t saved_size = 0;
+    uint8_t *ptr = NULL;
+
+    ESP_LOGI(TAG, "Loading vars...");
+    err = nvs_open(STORAGE_NAMESPACE, NVS_READWRITE, &handle);
+    if (err != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Failed open storage! %d", err);
+        return err;
+    }
+
+    err = nvs_get_blob(handle, CONFIG_NAME_VARS, NULL, &saved_size);
+    if (err != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Failed get size of vars! %d", err);
+    }
+
+    if (err == ESP_OK)
+    {
+        ESP_LOGI(TAG, "Size of saved vars = %d", saved_size);
+        ptr = calloc(saved_size, sizeof(uint8_t));
+
+        if (ptr == NULL)
+        {
+            ESP_LOGE(TAG, "No mem for vars!");
+            err = ESP_FAIL;
+        } else
+        {
+            err = nvs_get_blob(handle, CONFIG_NAME_VARS, ptr, &saved_size);
+            if (err != ESP_OK)
+            {
+                ESP_LOGW(TAG, "Failed to get blob of vars! %d", err);
+            }
+        }
+   
+    }
+
+    nvs_close(handle); 
+   
+    if (err == ESP_OK)
+    {
+        config_add_vars(ptr, saved_size);
+    }
+
+    free(ptr);
+    return err;
+}
 
 esp_err_t config_load(config_t *config)
 {

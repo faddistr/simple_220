@@ -280,6 +280,7 @@ static void initialise_wifi(void)
             ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
             is_config = true;
         }
+        config_load_vars();
     } else
     {
         config_t null_config = {};

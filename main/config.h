@@ -18,4 +18,6 @@ typedef struct
 
 esp_err_t config_load(config_t *config);
 void config_save(config_t *config);
+void config_save_vars(void);
+esp_err_t config_load_vars(void);
 #endif

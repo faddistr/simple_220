@@ -72,7 +72,7 @@ static bool var_search_list(void *ctx, void *data, void *tlist_el)
 		hnd->result = elem;
 		if (hnd->del)
 		{
-			var_free(elem, NULL);
+			var_free(NULL, elem);
 			tlist_del_one(tlist_el);
 		}
 		return true;
@@ -244,6 +244,9 @@ void var_save(void *ctx, save_to_flash_cb_t cb)
 		return;
 	}
 
+	hnd.cb = cb;
+	hnd.ctx = ctx;
+ 
 
 	var_wait_for_sem();
 	tlist_for_each(var.list, var_save_to_flash, &hnd);

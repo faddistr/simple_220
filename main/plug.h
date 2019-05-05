@@ -14,7 +14,6 @@ typedef enum
 	PLUG_KEY_NUM
 } plug_key_t;
 
-void plug_init(void);
 esp_err_t plug_set_key(plug_key_t key_num, bool val);
 void plug_deinit(void);
 

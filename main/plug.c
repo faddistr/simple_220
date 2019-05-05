@@ -1,6 +1,7 @@
 #include <esp_log.h>
 #include <driver/gpio.h>
 #include "plug.h"
+#include "module.h"
 
 #define PLUG_SET_DEF_VAL 1
 #define PLUG_KEYS_DEF_VAL 1U
@@ -18,7 +19,7 @@ static gpio_num_t plug_keys[] = {GPIO_KEY_0, GPIO_KEY_1, GPIO_KEY_2, GPIO_KEY_3}
 
 static void init_keys(void);
 
-void plug_init(void)
+static void plug_init(void)
 {
     ESP_LOGI(TAG, "Starting plug manager...");
     init_keys();
@@ -62,3 +63,5 @@ static void init_keys(void)
     }
 #endif
 }
+
+module_init(plug_init);

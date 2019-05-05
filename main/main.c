@@ -18,9 +18,8 @@
 #include "telegram.h"
 #include "config.h"
 #include "cmd_executor.h"
-#include "cmd_manager.h"
 #include "ram_var_stor.h"
-
+#include "module.h"
 
 #define CONFIG_BUTTON 25U
 
@@ -280,7 +279,6 @@ static void initialise_wifi(void)
             ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
             is_config = true;
         }
-        config_load_vars();
     } else
     {
         config_t null_config = {};
@@ -303,6 +301,7 @@ void app_main()
     }
     ESP_ERROR_CHECK( err );
     var_init();
+    module_init_all();
 
     //config_save(&config);
     s_wifi_event_group = xEventGroupCreate();
@@ -314,12 +313,6 @@ void app_main()
     {
         ESP_LOGW(TAG, "Succesfully created s_wifi_event_group  ...");
     }
-
-    cmd_init();
-    cmd_manager_register_all();
-
-
-
 
     initialise_wifi();
 }

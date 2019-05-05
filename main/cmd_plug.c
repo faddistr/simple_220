@@ -6,6 +6,7 @@
 #include "plug.h"
 #include "cmd_executor.h"
 #include "httpd_back.h"
+#include "module.h"
 
 static const char *TAG="C_PLUG";
 
@@ -120,7 +121,13 @@ static void cmd_plug_cb(const char *cmd_name, cmd_additional_info_t *info, void 
 	}
 }
 
-bool cmd_plug_register(void)
+static void cmd_plug_init(void) 
 {
-	return cmd_register(&cmd_plug_descr);
+	ESP_LOGI(TAG, "Module init...");
+	if (!cmd_register(&cmd_plug_descr))
+	{
+		ESP_LOGE(TAG, "Fail while adding commands!");
+	}
 }
+
+module_init(cmd_plug_init);

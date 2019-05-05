@@ -4,6 +4,7 @@
 #include <nvs.h>
 #include <string.h>
 #include "config.h"
+#include "module.h"
 #include "ram_var_stor.h"
 
 #define STORAGE_NAMESPACE "STORAGE"
@@ -255,3 +256,16 @@ void config_save(config_t *config)
 
     nvs_close(handle);
 }
+
+static void config_module_init(void)
+{
+    esp_err_t res;
+    ESP_LOGI(TAG, "Loading vars from flash...");
+    res = config_load_vars();
+    if ( res != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Fail while loading vars: %d", res);
+    }
+}
+
+module_init(config_module_init);

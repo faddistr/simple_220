@@ -10,7 +10,7 @@ typedef struct
 } cmd_search_helper_t;
 
 static const char *TAG="CMD";
-static void *cmd ;
+static void *cmd = NULL ;
 
 static bool cmd_search_list(void *ctx, void *data, void *tlist_el)
 {
@@ -38,13 +38,6 @@ static cmd_command_descr_t *cmd_search(const char *cmd_name)
 	hnd.result = NULL;
 	tlist_for_each(cmd, cmd_search_list, &hnd);
 	return hnd.result;
-}
-
-void cmd_init(void)
-{
-	ESP_LOGI(TAG, "CMD inited");
-	cmd = NULL;
-	return;
 }
 
 bool cmd_register(cmd_command_descr_t *descr)

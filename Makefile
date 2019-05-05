@@ -5,5 +5,6 @@
 PROJECT_NAME := simple
 
 EXTRA_COMPONENT_DIRS := components
+
 include $(IDF_PATH)/make/project.mk
 

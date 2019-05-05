@@ -7,6 +7,7 @@
 #include "cmd_executor.h"
 #include "telegram.h"
 #include "config.h"
+#include "module.h"
 
 static const char *TAG="C_SYS";
 
@@ -275,7 +276,7 @@ static void cmd_delvar_cb(const char *cmd_name, cmd_additional_info_t *info, voi
 	}
 }
 
-bool cmd_sys_register(void)
+static bool cmd_sys_register(void)
 {
 	bool res = true;
 	size_t count = sizeof(cmd_sys_descr) / sizeof(cmd_command_descr_t);
@@ -291,3 +292,14 @@ bool cmd_sys_register(void)
 
 	return res;
 }
+
+volatile void cmd_sys_init(void) 
+{
+	ESP_LOGI(TAG, "Module init...");
+	if (!cmd_sys_register())
+	{
+		ESP_LOGE(TAG, "Fail while adding commands!");
+	}
+}
+
+module_init(cmd_sys_init);

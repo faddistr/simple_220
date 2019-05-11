@@ -1,6 +1,6 @@
 SECTIONS
 {
-	.simple :
+	.flash.rodata :
 	{
 	    _initcall_simple_start = ABSOLUTE(.);
 	    KEEP(*(.initcall_simple))

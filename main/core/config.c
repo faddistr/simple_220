@@ -208,8 +208,8 @@ esp_err_t config_load(config_t *config)
         {
             char tmp[16] = {0};
 
-            var_add_attr("WIFI_SSID", config->ssid, true);
-            var_add_attr("WIFI_PASSWORD", config->password, true);
+            var_add_attr("WIFI_CLIENT_SSID", config->ssid, true);
+            var_add_attr("WIFI_CLIENT_PASSWORD", config->password, true);
             var_add_attr("HTTP_PASSWORD", config->user_pass, true);
             var_add_attr("TELEGRAM_TOKEN", config->telegram_token, true);
             sprintf(tmp, "%u", saved_size);
@@ -256,16 +256,3 @@ void config_save(config_t *config)
 
     nvs_close(handle);
 }
-
-static void config_init(void)
-{
-    esp_err_t res;
-    ESP_LOGI(TAG, "Loading vars from flash...");
-    res = config_load_vars();
-    if ( res != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Fail while loading vars: %d", res);
-    }
-}
-
-module_init(config_init);

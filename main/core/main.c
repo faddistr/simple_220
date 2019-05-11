@@ -14,7 +14,7 @@
 #include <sys/param.h>
 #include <driver/gpio.h>
 #include "ota.h"
-#include "httpd_back.h"
+
 #include "telegram.h"
 #include "config.h"
 #include "cmd_executor.h"
@@ -27,15 +27,6 @@ static const int CONNECTED_BIT = BIT0;
 static const int ESPTOUCH_DONE_BIT = BIT1;
 
 static const char *TAG="MAIN";
-
-EventGroupHandle_t s_wifi_event_group;
-static config_t config = {};
-static bool is_config = false;
-static void *teleCtx;
-static void *server;
-
-static void smartconfig_task(void * parm);
-static void sc_callback(smartconfig_status_t status, void *pdata);
 
 static bool check_button_press(void)
 {
@@ -51,99 +42,7 @@ static bool check_button_press(void)
     return gpio_get_level(CONFIG_BUTTON);
 }
 
-static void telegram_new_message(void *teleCtx, telegram_update_t *info)
-{
-    char *end = NULL;
-    cmd_additional_info_t *cmd_info = NULL;
-    telegram_chat_message_t *msg = NULL;
-    telegram_int_t chat_id = -1;
-    bool res = false;
-
-    if (info == NULL)
-    {
-        return;
-    }
-
-    msg = telegram_get_message(info);
-
-    if ((msg == NULL) || (msg->text == NULL))
-    {
-        return;
-    }
-
-    chat_id = telegram_get_chat_id(msg);
-    if (chat_id == -1)
-    {
-        return;
-    }
-
-    cmd_info = calloc(1, sizeof(cmd_additional_info_t));
-    end = strchr(msg->text, ' ');
-
-    ESP_LOGI(TAG, "Telegram message: %s from: %f", msg->text, chat_id);
-
-    cmd_info->transport = CMD_SRC_TELEGRAM;
-    cmd_info->sys_config = &config;
-    cmd_info->arg = teleCtx;
-    cmd_info->cmd_data = info;
-
-    if (end != NULL)
-    {
-        char *cmd = NULL;
-
-        *end = '\0';
-        cmd = strdup(msg->text);
-        *end = ' ';
-
-        res = cmd_execute(cmd, cmd_info);
-        free(cmd);
-    } else
-    {
-        res = cmd_execute(msg->text, cmd_info);
-    }
-
-    if ((res == true) && (cmd_info->sys_config_changed))
-    {
-        config_save(cmd_info->sys_config);
-    }
-
-    if (!res)
-    {
-        telegram_send_text_message(cmd_info->arg, chat_id, "Command not found!");
-    }
-
-    free(cmd_info);
-}
-
-static void httpd_back_new_message(void *ctx, httpd_arg_t *argv, uint32_t argc, void *sess)
-{
-    uint32_t i;
-    cmd_additional_info_t *info = calloc(1, sizeof(cmd_additional_info_t));
-
-    if (info == NULL)
-    {
-        return;
-    }
-
-    info->transport = CMD_SRC_HTTPB;
-    info->arg = ctx;
-    info->user_ses = sess;
-    info->sys_config = &config;
-    for (i = 0; i < argc; i++)
-    {
-        info->cmd_data = &argv[i].value;
-        cmd_execute(argv[i].key, info);
-        httpd_set_sess(ctx, info->user_ses);
-
-        if (info->sys_config_changed)
-        {
-            config_save(info->sys_config);
-        }
-    }
-
-    free(info);
-}
-
+#if 0
 static esp_err_t event_handler(void *ctx, system_event_t *event)
 {
     switch(event->event_id) {
@@ -254,41 +153,7 @@ static void smartconfig_task(void * parm)
     }
 }
 
-static void initialise_wifi(void)
-{
-    wifi_config_t wifi_config = {0};
-
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-
-
-    tcpip_adapter_init();
-    ESP_ERROR_CHECK(esp_event_loop_init(event_handler, NULL));
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-    ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    if (true)//!check_button_press())
-    {
-        if (config_load(&config) != ESP_OK)
-        {
-            ESP_LOGI(TAG, "Failed to load config...");
-        } else
-        {
-            ESP_LOGI(TAG, "Setting WiFi configuration SSID %s...", wifi_config.sta.ssid);
-            strncpy((char *)wifi_config.sta.ssid, config.ssid, MAX_CONFIG_SSID);
-            strncpy((char *)wifi_config.sta.password, config.password, MAX_CONFIG_PASSWORD);
-            ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
-            is_config = true;
-        }
-    } else
-    {
-        config_t null_config = {};
-        ESP_LOGI(TAG, "Erasing config...");
-        config_save(&null_config);
-    }
-
-    ESP_ERROR_CHECK(esp_wifi_start());
-}
-
+#endif
 
 void app_main()
 {
@@ -301,18 +166,6 @@ void app_main()
     }
     ESP_ERROR_CHECK( err );
     var_init();
+    ESP_ERROR_CHECK(config_load_vars());
     module_init_all();
-
-    //config_save(&config);
-    s_wifi_event_group = xEventGroupCreate();
-
-    if (s_wifi_event_group == NULL)
-    {
-        ESP_LOGW(TAG, "Failed to create s_wifi_event_group  ...");
-    } else
-    {
-        ESP_LOGW(TAG, "Succesfully created s_wifi_event_group  ...");
-    }
-
-    initialise_wifi();
 }

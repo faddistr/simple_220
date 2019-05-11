@@ -1,0 +1,13 @@
+[sections:initcall]
+entries:
+    .initcallsimple+
+
+[scheme:simple]
+entries:
+	initcall -> flash_rodata
+
+[mapping:simple]
+archive: libmain.a
+entries:
+    KEEP(simple)
+

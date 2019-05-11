@@ -257,7 +257,7 @@ void config_save(config_t *config)
     nvs_close(handle);
 }
 
-static void config_module_init(void)
+static void config_init(void)
 {
     esp_err_t res;
     ESP_LOGI(TAG, "Loading vars from flash...");
@@ -268,4 +268,4 @@ static void config_module_init(void)
     }
 }
 
-module_init(config_module_init);
+module_init(config_init);

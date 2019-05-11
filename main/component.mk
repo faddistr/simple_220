@@ -5,5 +5,4 @@
 
 COMPONENT_ADD_INCLUDEDIRS = .
 COMPONENT_SRCDIRS = . 
-COMPONENT_ADD_LDFLAGS = -Wl,--whole-archive -l$(COMPONENT_NAME) -Wl,--no-whole-archive
-#COMPONENT_ADD_LDFRAGMENTS += "simple.lf"
+COMPONENT_ADD_LDFLAGS = -Wl,--whole-archive -l$(COMPONENT_NAME) -Wl,--no-whole-archive -T $(PROJECT_PATH)/main/simple.ld

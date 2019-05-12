@@ -1,3 +1,4 @@
+#include <string.h>
 #include <esp_log.h>
 #include <esp_system.h>
 #include <esp_http_server.h>
@@ -172,6 +173,11 @@ void httpd_send_answ(void *req_ptr, const char *str, uint32_t len)
     {
         ESP_LOGW(TAG, "httpd_send_answ: Wrong argument");
         return;
+    }
+
+    if (len == 0)
+    {
+        len = strlen(str);
     }
 
     res = httpd_resp_send_chunk(req, str, len);

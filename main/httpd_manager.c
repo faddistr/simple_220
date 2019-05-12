@@ -5,19 +5,36 @@
 #include <esp_event.h>
 #include "ram_var_stor.h"
 #include "cmd_executor.h"
-static const char *TAG="HTTPD_STARTER";
+static const char *TAG="HTTPD_MANAGER";
 
 static void *server;
 static char *httpd_password;
 
-//TODO: check password
 static void httpd_back_new_message(void *ctx, httpd_arg_t *argv, uint32_t argc, void *sess)
 {
     uint32_t i;
-    cmd_additional_info_t *info = calloc(1, sizeof(cmd_additional_info_t));
+    cmd_additional_info_t *info = NULL;
 
+    if (httpd_password != NULL)
+    {
+        for (i = 0; i < argc; i++)
+        {
+           if (!strcmp(argv[i].key, "pass"))
+           {
+                if (strcmp(argv[i].value, httpd_password))
+                {
+                    ESP_LOGW(TAG, "Incorrect password!");
+                    httpd_send_answ(info->arg, "FAIL: Incorrect password!", 0);
+                    return;
+                }
+           } 
+        } 
+    }
+
+    info = calloc(1, sizeof(cmd_additional_info_t));
     if (info == NULL)
     {
+        ESP_LOGE(TAG, "No mem for respond.");
         return;
     }
 
@@ -55,9 +72,10 @@ static void httpd_event_handler(void *ctx, esp_event_base_t event_base, int32_t 
         break;
 
         case IP_EVENT_STA_LOST_IP:
-            free(server);
+            httpd_stop_webserver(server);
             free(httpd_password);
             server = NULL;
+            httpd_password = NULL;
             var_add("HTTPD_STAT", "NO_IP");
             break;
 

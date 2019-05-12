@@ -293,7 +293,7 @@ static bool cmd_sys_register(void)
 	return res;
 }
 
-volatile void cmd_sys_init(void) 
+static void cmd_sys_init(void) 
 {
 	ESP_LOGI(TAG, "Module init...");
 	if (!cmd_sys_register())

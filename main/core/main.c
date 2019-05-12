@@ -155,6 +155,18 @@ static void smartconfig_task(void * parm)
 
 #endif
 
+static void event_handler(void *ctx, esp_event_base_t event_base, int32_t event_id, void *event_data)
+{
+    char tmp[8];
+    ESP_LOGI(TAG, "MODULE LOADER event_id = %d, data = %d", event_id, *((int32_t *)event_data));
+
+    if (event_id == MODULE_EVENT_DONE)
+    {
+        snprintf(tmp, 8, "%d", *((int32_t *)event_data));
+        var_add("SYS_MODULE_AMOUNT", tmp);
+    }
+}
+
 void app_main()
 {
     esp_err_t err = nvs_flash_init();
@@ -168,5 +180,6 @@ void app_main()
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     var_init();
     ESP_ERROR_CHECK(config_load_vars());
+    esp_event_handler_register(MODULE_BASE, ESP_EVENT_ANY_ID, event_handler, NULL);
     module_init_all();
 }

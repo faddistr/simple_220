@@ -2,6 +2,8 @@
 #define MODULE_H
 #include <esp_event.h>
 
+extern esp_event_loop_handle_t simple_loop_handle;
+
 typedef void(*initcall_t)(void);
 #define module_init(fn) \
 	 static const initcall_t __initcall_##fn  __attribute__((used)) \

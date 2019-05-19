@@ -6,102 +6,41 @@
 #include "ram_var_stor.h"
 #include "cmd_executor.h"
 #include "telegram.h"
+#include "telegram_events.h"
 #include "config.h"
 #include "module.h"
 
 static const char *TAG="C_SYS";
 
-static void cmd_getvar_cb(const char *cmd_name, cmd_additional_info_t *info, void *private);
-static void cmd_loadvar_cb(const char *cmd_name, cmd_additional_info_t *info, void *private);
-static void cmd_savevar_cb(const char *cmd_name, cmd_additional_info_t *info, void *private);
-static void cmd_setvar_cb(const char *cmd_name, cmd_additional_info_t *info, void *private);
-static void cmd_setvar_f_cb(const char *cmd_name, cmd_additional_info_t *info, void *private);
-static void cmd_delvar_cb(const char *cmd_name, cmd_additional_info_t *info, void *private);
-
-static cmd_command_descr_t cmd_sys_descr[] =
-{
-	{
-		.name = "GetVar",
-		.cmd_cb = cmd_getvar_cb,
-	},
-
-	{
-		.name = "SetVar",
-		.cmd_cb = cmd_setvar_cb,
-	},
-
-	{
-		.name = "SetVarF",
-		.cmd_cb = cmd_setvar_f_cb,
-	},
-
-	{
-
-		.name = "DelVar",
-		.cmd_cb = cmd_delvar_cb,
-	},
-
-	{
-		.name = "Save",
-		.cmd_cb = cmd_savevar_cb,
-	},
-
-	{
-		.name = "Load",
-		.cmd_cb = cmd_loadvar_cb,
-	},
-};
-
 static void cmd_savevar_cb_telegram(const char *cmd_name, cmd_additional_info_t *info, void *private)
 {
-	telegram_chat_message_t *msg = telegram_get_message((telegram_update_t *)info->cmd_data);
-    telegram_int_t chat_id = telegram_get_chat_id(msg);
-
-    if ((msg == NULL) || (chat_id == -1))
-    {
-    	ESP_LOGW(TAG, "Bad params!");
-    	return;
-    }
+	telegram_event_msg_t *evt = (telegram_event_msg_t *)info->cmd_data;
 
     config_save_vars();
-	telegram_send_text_message(info->arg, chat_id, "OK");
+	telegram_send_text_message(info->arg, evt->chat_id, "OK");
 }
 
 static void cmd_loadvar_cb_telegram(const char *cmd_name, cmd_additional_info_t *info, void *private)
 {
 	esp_err_t res;
 	char temp[16];
-	telegram_chat_message_t *msg = telegram_get_message((telegram_update_t *)info->cmd_data);
-    telegram_int_t chat_id = telegram_get_chat_id(msg);
-
-    if ((msg == NULL) || (chat_id == -1))
-    {
-    	ESP_LOGW(TAG, "Bad params!");
-    	return;
-    }
+	telegram_event_msg_t *evt = (telegram_event_msg_t *)info->cmd_data;
 
     res = config_load_vars();
     sprintf(temp, "Result: %d", res);
-	telegram_send_text_message(info->arg, chat_id, temp);
+	telegram_send_text_message(info->arg, evt->chat_id, temp);
 }
 
 static void cmd_getvar_cb_telegram(const char *cmd_name, cmd_additional_info_t *info, void *private)
 {
-	telegram_chat_message_t *msg = telegram_get_message((telegram_update_t *)info->cmd_data);
-    telegram_int_t chat_id = telegram_get_chat_id(msg);
+	telegram_event_msg_t *evt = (telegram_event_msg_t *)info->cmd_data;
     char *var_name = NULL;
     char *var_value = NULL;
 
-    if ((msg == NULL) || (chat_id == -1))
-    {
-    	ESP_LOGW(TAG, "Bad params!");
-    	return;
-    }
-
-    var_name = strchr(msg->text, ' ');
+    var_name = strchr(evt->text, ' ');
     if (var_name == NULL)
     {
-    	telegram_send_text_message(info->arg, chat_id, "Bad params!");
+    	telegram_send_text_message(info->arg, evt->chat_id, "Bad params!");
     	return;
     }
 
@@ -109,12 +48,12 @@ static void cmd_getvar_cb_telegram(const char *cmd_name, cmd_additional_info_t *
     var_value = var_get(var_name);
     if (var_value == NULL)
     {
-    	telegram_send_text_message(info->arg, chat_id, "Variable not found!");
+    	telegram_send_text_message(info->arg, evt->chat_id, "Variable not found!");
     	return;
     }
 
-    telegram_send_text_message(info->arg, chat_id, var_name);
-	telegram_send_text_message(info->arg, chat_id, var_value);
+    telegram_send_text_message(info->arg, evt->chat_id, var_name);
+	telegram_send_text_message(info->arg, evt->chat_id, var_value);
 
     free(var_value);
 }
@@ -122,21 +61,14 @@ static void cmd_getvar_cb_telegram(const char *cmd_name, cmd_additional_info_t *
 
 static void cmd_setvar_cb_telegram(const char *cmd_name, cmd_additional_info_t *info, void *private, bool save_to_flash)
 {
-	telegram_chat_message_t *msg = telegram_get_message((telegram_update_t *)info->cmd_data);
-    telegram_int_t chat_id = telegram_get_chat_id(msg);
+	telegram_event_msg_t *evt = (telegram_event_msg_t *)info->cmd_data;
     char *var_name = NULL;
     char *var_value = NULL;
 
-    if ((msg == NULL) || (chat_id == -1))
-    {
-    	ESP_LOGW(TAG, "Bad params!");
-    	return;
-    }
-
-    var_name = strchr(msg->text, ' ');
+    var_name = strchr(evt->text, ' ');
     if (var_name == NULL)
     {
-    	telegram_send_text_message(info->arg, chat_id, "Bad params!");
+    	telegram_send_text_message(info->arg, evt->chat_id, "Bad params!");
     	return;
     }
 
@@ -146,31 +78,24 @@ static void cmd_setvar_cb_telegram(const char *cmd_name, cmd_additional_info_t *
     var_value++;
 
  	var_add_attr(var_name, var_value, save_to_flash);
-	telegram_send_text_message(info->arg, chat_id, "OK");
+	telegram_send_text_message(info->arg, evt->chat_id, "OK");
 }	
 
 static void cmd_delvar_cb_telegram(const char *cmd_name, cmd_additional_info_t *info, void *private)
 {
-	telegram_chat_message_t *msg = telegram_get_message((telegram_update_t *)info->cmd_data);
-    telegram_int_t chat_id = telegram_get_chat_id(msg);
+	telegram_event_msg_t *evt = (telegram_event_msg_t *)info->cmd_data;
     char *var_name = NULL;
 
-    if ((msg == NULL) || (chat_id == -1))
-    {
-    	ESP_LOGW(TAG, "Bad params!");
-    	return;
-    }
-
-    var_name = strchr(msg->text, ' ');
+    var_name = strchr(evt->text, ' ');
     if (var_name == NULL)
     {
-    	telegram_send_text_message(info->arg, chat_id, "Bad params!");
+    	telegram_send_text_message(info->arg, evt->chat_id, "Bad params!");
     	return;
     }
 
     var_name++;
     var_del(var_name);
-    telegram_send_text_message(info->arg, chat_id, "OK");
+    telegram_send_text_message(info->arg, evt->chat_id, "OK");
 }
 
 static void cmd_setvar_cb(const char *cmd_name, cmd_additional_info_t *info, void *private)
@@ -276,30 +201,35 @@ static void cmd_delvar_cb(const char *cmd_name, cmd_additional_info_t *info, voi
 	}
 }
 
-static bool cmd_sys_register(void)
-{
-	bool res = true;
-	size_t count = sizeof(cmd_sys_descr) / sizeof(cmd_command_descr_t);
-
-	for (uint32_t i = 0; i < count; i++)
+cmd_register_static({
 	{
-		res = cmd_register(&cmd_sys_descr[i]);
-		if (!res)
-		{
-			break;
-		}
-	}
+		.name = "GetVar",
+		.cmd_cb = cmd_getvar_cb,
+	},
 
-	return res;
-}
-
-static void cmd_sys_init(void) 
-{
-	ESP_LOGI(TAG, "Module init...");
-	if (!cmd_sys_register())
 	{
-		ESP_LOGE(TAG, "Fail while adding commands!");
-	}
-}
+		.name = "SetVar",
+		.cmd_cb = cmd_setvar_cb,
+	},
 
-module_init(cmd_sys_init);
+	{
+		.name = "SetVarF",
+		.cmd_cb = cmd_setvar_f_cb,
+	},
+
+	{
+
+		.name = "DelVar",
+		.cmd_cb = cmd_delvar_cb,
+	},
+
+	{
+		.name = "Save",
+		.cmd_cb = cmd_savevar_cb,
+	},
+
+	{
+		.name = "Load",
+		.cmd_cb = cmd_loadvar_cb,
+	},
+});

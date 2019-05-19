@@ -5,6 +5,7 @@
 #include <esp_log.h>
 #include "plug.h"
 #include "cmd_executor.h"
+#include "telegram_events.h"
 #include "httpd_back.h"
 #include "module.h"
 
@@ -12,11 +13,12 @@ static const char *TAG="C_PLUG";
 
 static void cmd_plug_cb(const char *cmd_name, cmd_additional_info_t *info, void *private);
 
-static cmd_command_descr_t cmd_plug_descr =
+cmd_register_static({
 {
 	.name = "plug",
 	.cmd_cb = cmd_plug_cb,
-};
+} 
+});
 
 static bool cmd_plug(void *args)
 {
@@ -85,21 +87,14 @@ static void cmd_plug_cb_httpb(const char *cmd_name, cmd_additional_info_t *info,
 
 static void cmd_plug_cb_telegram(const char *cmd_name, cmd_additional_info_t *info, void *private)
 {
-	telegram_chat_message_t *msg = telegram_get_message((telegram_update_t *)info->cmd_data);
-    telegram_int_t chat_id = telegram_get_chat_id(msg);
+	telegram_event_msg_t *evt = ((telegram_event_msg_t *)info->cmd_data);
 
-    if ((msg == NULL) || (chat_id == -1))
-    {
-    	ESP_LOGW(TAG, "Bad params!");
-    	return;
-    }
-
-	if (cmd_plug(msg->text))
+	if (cmd_plug(evt->text))
 	{
-		telegram_send_text_message(info->arg, chat_id, "OK");
+		telegram_send_text_message(evt->ctx, evt->chat_id, "OK");
 	} else
 	{
-		telegram_send_text_message(info->arg, chat_id, "FAIL");
+		telegram_send_text_message(evt->ctx, evt->chat_id, "FAIL");
 	}
 }
 
@@ -120,14 +115,3 @@ static void cmd_plug_cb(const char *cmd_name, cmd_additional_info_t *info, void 
 			break;
 	}
 }
-
-static void cmd_plug_init(void) 
-{
-	ESP_LOGI(TAG, "Module init...");
-	if (!cmd_register(&cmd_plug_descr))
-	{
-		ESP_LOGE(TAG, "Fail while adding commands!");
-	}
-}
-
-module_init(cmd_plug_init);

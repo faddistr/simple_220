@@ -22,5 +22,5 @@ void module_init_all(void)
 
  	ESP_LOGI(TAG, "Loaded modules: %d", count);
 
- 	ESP_ERROR_CHECK(esp_event_post(MODULE_BASE, MODULE_EVENT_DONE, &count, sizeof(count), portMAX_DELAY));
+ 	ESP_ERROR_CHECK(esp_event_post_to(simple_loop_handle, MODULE_BASE, MODULE_EVENT_DONE, &count, sizeof(count), portMAX_DELAY));
 }

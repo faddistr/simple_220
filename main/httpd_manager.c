@@ -103,7 +103,7 @@ static void httpd_starter_init(void)
     free(httpd_disable);
 
     var_add("HTTPD_STAT", "MODULE_INIT");
-    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, ESP_EVENT_ANY_ID, httpd_event_handler, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register_with(simple_loop_handle, IP_EVENT, ESP_EVENT_ANY_ID, httpd_event_handler, NULL));
 }
 
 module_init(httpd_starter_init);

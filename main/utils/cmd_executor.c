@@ -3,6 +3,9 @@
 #include "cmd_executor.h"
 #include "tlist.h"
 
+extern cmd_command_descr_t _cmd_st_simple_start;
+extern cmd_command_descr_t _cmd_st_simple_stop;
+
 typedef struct
 {
 	const char *cmd_name;
@@ -40,6 +43,24 @@ static cmd_command_descr_t *cmd_search(const char *cmd_name)
 	return hnd.result;
 }
 
+static cmd_command_descr_t *cmd_search_static(const char *cmd_name)
+{
+	if (cmd_name == NULL)
+	{
+		return NULL;
+	}
+
+ 	for (cmd_command_descr_t *iter = &_cmd_st_simple_start ; iter < &_cmd_st_simple_stop; ++iter)
+ 	{
+		if (!strcmp(cmd_name, iter->name))
+		{
+			return iter;
+		}
+ 	}
+
+ 	return NULL;
+}
+
 bool cmd_register(cmd_command_descr_t *descr)
 {
 	if ((descr == NULL) || (descr->name == NULL) || (descr->cmd_cb == NULL))
@@ -62,9 +83,16 @@ void cmd_deinit(void)
 
 bool cmd_execute(const char *cmd_name, cmd_additional_info_t *info)
 {
-	cmd_command_descr_t *cmd_mem = cmd_search(cmd_name);
+	cmd_command_descr_t *cmd_mem = NULL;
 
 	ESP_LOGI(TAG, "Looking for %s", cmd_name);
+
+	cmd_mem = cmd_search_static(cmd_name);
+	if (cmd_mem == NULL)
+	{
+		cmd_mem = cmd_search(cmd_name);
+	}
+
 	if (cmd_mem != NULL)
 	{
 		ESP_LOGI(TAG, "Executing...");

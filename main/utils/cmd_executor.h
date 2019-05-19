@@ -35,4 +35,8 @@ void cmd_init(void);
 bool cmd_register(cmd_command_descr_t *descr);
 bool cmd_execute(const char *cmd_name, cmd_additional_info_t *info);
 
+#define cmd_register_static(...) \
+	 static const cmd_command_descr_t __cmd_descr_stat[]  __attribute__((used)) \
+	__attribute__((__section__(".cmd_st_simple"))) = __VA_ARGS__
+
 #endif

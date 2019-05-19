@@ -63,6 +63,7 @@ static void telegram_new_message(void *teleCtx, telegram_update_t *info)
         free(cmd);
     } else
     {
+
         res = cmd_execute(msg->text, cmd_info);
     }
 
@@ -102,9 +103,12 @@ static void ip_event_handler(void *ctx, esp_event_base_t event_base, int32_t eve
                         TELEGRAM_ERROR, &err, sizeof(err), portMAX_DELAY));
                     return;
                 }
+                
+                ESP_LOGI(TAG, "Telegram started! %X", (uint32_t)teleCtx);
 
                 ESP_ERROR_CHECK(esp_event_post(TELEGRAM_BASE, 
                         TELEGRAM_STARTED, &teleCtx, sizeof(teleCtx), portMAX_DELAY));
+
             }
         break;
 

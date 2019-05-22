@@ -100,7 +100,6 @@ static void cmd_plug_cb_telegram(const char *cmd_name, cmd_additional_info_t *in
 
 static void cmd_plug_cb(const char *cmd_name, cmd_additional_info_t *info, void *private)
 {
-	ESP_LOGI(TAG, "SRC: %X", info->transport);
 	switch (info->transport)
 	{
 		case CMD_SRC_HTTPB:

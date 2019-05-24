@@ -40,11 +40,17 @@ static void config_list_to_array_cb(void *ctx, char *key, char *value)
     ESP_LOGI(TAG, "Cpy to arr: %s = %s (%d)", key, value, hnd->cur_offset);
 }
 
-static void config_add_vars(uint8_t *src, size_t total_size)
+void config_load_vars_mem(uint8_t *src, size_t total_size)
 {
     size_t len = 0;
     char *key;
     char *value;
+
+    if (src == NULL)
+    {
+        ESP_LOGE(TAG, "Bad arguments");
+        return;
+    }
 
     while (total_size)
     {
@@ -71,12 +77,34 @@ static void config_add_vars(uint8_t *src, size_t total_size)
     }
 }
 
+uint8_t *config_get_vars_mem(uint32_t *total_size)
+{
+    config_save_vars_helper_t hnd = {};
+
+    if (total_size == NULL)
+    {
+        ESP_LOGE(TAG, "Bad arguments");
+        return NULL;
+    }
+
+    var_save(total_size, config_calculate_size_cb);
+    hnd.ptr = calloc(*total_size, sizeof(uint8_t));
+    if (hnd.ptr == NULL)
+    {
+        ESP_LOGE(TAG, "config_get_vars no mem!");
+        return NULL;
+    }
+    var_save(&hnd, config_list_to_array_cb);
+
+    return hnd.ptr;
+}
+
 void config_save_vars(void)
 {
     esp_err_t err;
     nvs_handle handle;
     config_save_vars_helper_t hnd = {};
-    volatile size_t total_size = 0;
+    size_t total_size = 0;
 
     var_save(&total_size, config_calculate_size_cb);
     hnd.ptr = calloc(total_size, sizeof(uint8_t));
@@ -163,7 +191,7 @@ esp_err_t config_load_vars(void)
    
     if (err == ESP_OK)
     {
-        config_add_vars(ptr, saved_size);
+        config_load_vars_mem(ptr, saved_size);
     }
 
     free(ptr);

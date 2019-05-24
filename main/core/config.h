@@ -20,4 +20,8 @@ esp_err_t config_load(config_t *config);
 void config_save(config_t *config);
 void config_save_vars(void);
 esp_err_t config_load_vars(void);
+
+uint8_t *config_get_vars_mem(uint32_t *total_size);
+void config_load_vars_mem(uint8_t *src, size_t total_size);
+
 #endif

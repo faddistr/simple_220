@@ -61,7 +61,9 @@ static void telegram_new_file(void *teleCtx, telegram_update_t *info)
     }
 
     file = msg->file;
-    data_size = strlen(file->id) + 1 + strlen(file->name) + 1 + strlen(file->mime_type) + 1 + strlen(msg->caption) + 1;
+    data_size = strlen(file->id) + 1 + strlen(file->name) + 1 + strlen(file->mime_type) + 1 
+        + (msg->caption?strlen(msg->caption):0) + 1;
+    
     event_file = calloc(data_size + sizeof(telegram_event_file_t), 1);
     if (event_file == NULL)
     {
@@ -78,6 +80,7 @@ static void telegram_new_file(void *teleCtx, telegram_update_t *info)
     event_file->id_str_offset = offset;
     memcpy(&event_file->blob[offset], file->id, strlen(file->id) + 1);
     offset += strlen(file->id) + 1;
+
 
     if (file->name)
     {

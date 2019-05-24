@@ -88,7 +88,7 @@ bool cmd_execute(const char *cmd_name, cmd_additional_info_t *info)
 	ESP_LOGI(TAG, "Looking for %s", cmd_name);
 
 	cmd_mem = cmd_search_static(cmd_name);
-	if (cmd_mem == NULL)
+	if ((cmd_mem == NULL) && (cmd != NULL))
 	{
 		cmd_mem = cmd_search(cmd_name);
 	}

@@ -9,8 +9,6 @@
 #include "httpd_back.h"
 #include "module.h"
 
-static const char *TAG="C_PLUG";
-
 static void cmd_plug_cb(const char *cmd_name, cmd_additional_info_t *info, void *private);
 
 cmd_register_static({

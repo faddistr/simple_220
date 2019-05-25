@@ -115,7 +115,6 @@ static void telegram_new_file(void *teleCtx, telegram_update_t *info)
     free(event_file);
 }
 
-
 static void telegram_new_obj(void *teleCtx, telegram_update_t *info)
 {
     /* telegram_update_t type is not compatible with esp_event_loop */
@@ -134,8 +133,10 @@ static void ip_event_handler(void *ctx, esp_event_base_t event_base, int32_t eve
         case IP_EVENT_STA_GOT_IP:
             if (teleCtx == NULL)
             {
+                uint32_t telegram_message_limit = 0;
                 esp_err_t err = ESP_ERR_INVALID_ARG;
                 char *telegram_token = var_get("TELEGRAM_TOKEN");
+                char *telegram_message_limit_str = var_get("TELEGRAM_MESSAGE_LIMIT");
 
                 if (telegram_token == NULL)
                 {
@@ -145,7 +146,14 @@ static void ip_event_handler(void *ctx, esp_event_base_t event_base, int32_t eve
                     return;
                 }
 
-                teleCtx = telegram_init(telegram_token, telegram_new_obj);
+                if (telegram_message_limit_str != NULL)
+                {
+                    sscanf(telegram_message_limit_str, "%d", &telegram_message_limit);
+                    free(telegram_message_limit_str);
+                    ESP_LOGI(TAG, "Message limit: %d", telegram_message_limit);
+                }
+
+                teleCtx = telegram_init(telegram_token, telegram_message_limit, telegram_new_obj);
                 free(telegram_token);
 
                 if (teleCtx == NULL)

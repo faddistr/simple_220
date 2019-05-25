@@ -15,25 +15,17 @@ static telegram_event_file_t *file_evt;
 static telegram_document_t file;
 static char *file_path;
 
-static void telegram_ota_task(void * param)
-{
-    ESP_LOGI(TAG, "Start!");
-
-    ESP_LOGI(TAG, "File: id: %s name: %s type: %s size: %lf chat_id: %lf", 
-        file.id, file.name, file.mime_type, file.file_size, file_evt->chat_id);
-
-	while(teleCtx != NULL)
-	{
-		vTaskDelay(20);
-	}
-
-	ESP_LOGI(TAG, "Stop");
-	teleCtx = NULL;
-}
-
 static uint8_t *config_buffer;
 static uint32_t counter;
 static telegram_int_t chat_id;
+
+typedef struct
+{
+    uint8_t *send_ptr;
+    uint32_t total_size;
+    uint32_t counter;
+    telegram_int_t chat_id;
+} getFile_helper_t;
 
 static bool telegram_load_config_cb(void *ctx, uint8_t *buf, int size, int total_len)
 {
@@ -43,6 +35,7 @@ static bool telegram_load_config_cb(void *ctx, uint8_t *buf, int size, int total
         config_load_vars_mem(config_buffer, counter);
         free(config_buffer);
         config_buffer = NULL;
+  
         telegram_send_text_message(ctx, chat_id, "Config loaded!");
         return true;
     }
@@ -133,46 +126,65 @@ static void telegram_event_handler(void *ctx, esp_event_base_t event_base, int32
 	}
 }
 
-static void telegram_ota_init(void)
+static uint32_t send_file_cb(telegram_data_event_t evt, void *teleCtx_ptr, void *ctx, void *evt_data)
 {
-	ESP_LOGI(TAG, "Module started...");
-    ESP_ERROR_CHECK(esp_event_handler_register_with(simple_loop_handle, TELEGRAM_BASE, ESP_EVENT_ANY_ID, telegram_event_handler, NULL));
-}
+    getFile_helper_t *hlp = (getFile_helper_t *)ctx;
+    telegram_write_data_evt_t *hnd = (telegram_write_data_evt_t *)evt_data;
+     uint32_t part_size;
+    telegram_update_t *update = (telegram_update_t *)evt_data;
 
-typedef struct
-{
-    uint8_t *send_ptr;
-    uint32_t total_size;
-    uint32_t counter;
-} getFile_helper_t;
-
-static uint32_t send_file_cb(void *ctx, uint8_t *buf, uint32_t max_size)
-{
-    getFile_helper_t *hnd = (getFile_helper_t *)ctx;
-    uint32_t part_size = max_size;
-
-    if (hnd->total_size == 0)
+    switch (evt)
     {
-        ESP_LOGW(TAG, "Data sent!");
-        return 0;
+        case TELEGRAM_READ_DATA:   
+            {
+               
+                part_size = hnd->pice_size;
+
+                if (part_size > hlp->total_size)
+                {
+                    part_size = hlp->total_size;
+                }
+
+                memcpy(hnd->buf, &hlp->send_ptr[hlp->counter], part_size);
+
+                hlp->total_size -= part_size;
+                hlp->counter += part_size;
+                return part_size;
+            }
+            break;
+
+        case TELEGRAM_RESPONSE:
+            {
+                telegram_chat_message_t *msg = telegram_get_message(update);
+                ESP_LOGI(TAG, "TELEGRAM_RESPONSE");
+
+                if (msg && (msg->file))
+                {
+                    ESP_LOGI(TAG, "file_id: %s", msg->file->id);
+                    telegram_send_text_message(teleCtx_ptr, hlp->chat_id,  msg->file->id);
+                }
+            }
+            break; 
+
+        case TELEGRAM_WRITE_DATA:
+            ESP_LOGI(TAG, "TELEGRAM_WRITE_DATA");
+            break;
+
+        case TELEGRAM_ERR:
+            ESP_LOGE(TAG, "TELEGRAM_ERR");
+            break;
+
+        case TELEGRAM_END:
+            ESP_LOGI(TAG, "TELEGRAM_END");
+            free(hlp->send_ptr);
+            free(hlp);
+            break;
+
+        default:
+            break;
     }
 
-    if (part_size > hnd->total_size)
-    {
-        part_size = hnd->total_size;
-    }
-
-    memcpy(buf, &hnd->send_ptr[hnd->counter], part_size);
-
-    hnd->total_size -= part_size;
-    hnd->counter += part_size;
-    if (hnd->total_size == 0)
-    {
-        free(hnd->send_ptr);
-        free(hnd);
-    }
-
-    return part_size;
+    return 0;
 }
 
 static void cmd_configfile(const char *cmd_name, cmd_additional_info_t *info, void *private)
@@ -186,6 +198,7 @@ static void cmd_configfile(const char *cmd_name, cmd_additional_info_t *info, vo
         return;
     }
 
+    ctx->chat_id = evt->chat_id;
     ctx->send_ptr = config_get_vars_mem(&ctx->total_size);
 
     if ((ctx->send_ptr == NULL) || (ctx->total_size == 0))
@@ -194,10 +207,32 @@ static void cmd_configfile(const char *cmd_name, cmd_additional_info_t *info, vo
         return;
     }
 
-    telegram_send_file(info->arg, evt->chat_id, "config", "config.txt", ctx->total_size, ctx, send_file_cb);
+    telegram_send_file_e(info->arg, evt->chat_id, "config", "config.txt", ctx->total_size, ctx, send_file_cb);
 }
 
+static void cmd_getpath(const char *cmd_name, cmd_additional_info_t *info, void *private)
+{
+    telegram_event_msg_t *evt = (telegram_event_msg_t *)info->cmd_data;
+    char *file_id = (char *)&evt->text[strlen(cmd_name)];
 
+    if (file_id == '\0')
+    {
+         telegram_send_text_message(info->arg, evt->chat_id, "Wrong args");
+         return;
+    } else
+    {
+        char *file = telegram_get_file_path(info->arg, file_id + 1);
+        if (file == NULL)
+        {
+            telegram_send_text_message(info->arg, evt->chat_id, "file_id not found");
+            return;
+        }
+
+        telegram_send_text_message(info->arg, evt->chat_id, file);
+        free(file);
+    }
+
+}
 
 static uint32_t send_testfile_cb(telegram_data_event_t evt, void *teleCtx_ptr, void *ctx, void *evt_data)
 {
@@ -262,6 +297,12 @@ static void cmd_testfile(const char *cmd_name, cmd_additional_info_t *info, void
 }
 
 
+static void telegram_ota_init(void)
+{
+    ESP_LOGI(TAG, "Module started...");
+    ESP_ERROR_CHECK(esp_event_handler_register_with(simple_loop_handle, TELEGRAM_BASE, ESP_EVENT_ANY_ID, telegram_event_handler, NULL));
+}
+
 module_init(telegram_ota_init);
 cmd_register_static({
     {
@@ -271,5 +312,9 @@ cmd_register_static({
     {
         .name = "getconfig",
         .cmd_cb = cmd_configfile,
+    },
+    {
+        .name = "getpath",
+        .cmd_cb = cmd_getpath,
     },
 });

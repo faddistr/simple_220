@@ -197,20 +197,68 @@ static void cmd_configfile(const char *cmd_name, cmd_additional_info_t *info, vo
     telegram_send_file(info->arg, evt->chat_id, "config", "config.txt", ctx->total_size, ctx, send_file_cb);
 }
 
-static uint32_t send_testfile_cb(void *ctx, uint8_t *buf, uint32_t max_size)
-{
-    ESP_LOGE(TAG, "MSIZE:%d", max_size);
-    memset(buf, 'B', max_size);
-    sprintf((char *)buf, "Hello world\n");
-    buf[strlen((char *)buf)] = (uint8_t)'A';
 
-    return max_size;
+
+static uint32_t send_testfile_cb(telegram_data_event_t evt, void *teleCtx_ptr, void *ctx, void *evt_data)
+{
+    telegram_int_t *chat_id = (telegram_int_t *)ctx;
+    telegram_write_data_evt_t *hnd = (telegram_write_data_evt_t *)evt_data;
+    telegram_update_t *update = (telegram_update_t *)evt_data;
+
+    switch (evt)
+    {
+        case TELEGRAM_READ_DATA:
+            {
+                ESP_LOGI(TAG, "TELEGRAM_READ_DATA");
+                ESP_LOGE(TAG, "MSIZE:%d", hnd->pice_size);
+                memset(hnd->buf, 'B', hnd->pice_size);
+                sprintf((char *)hnd->buf, "Hello world\n");
+                hnd->buf[strlen((char *)hnd->buf)] = (uint8_t)'A';
+
+                return hnd->pice_size;
+            }
+            break;
+
+        case TELEGRAM_RESPONSE:
+            {
+                telegram_chat_message_t *msg = telegram_get_message(update);
+                ESP_LOGI(TAG, "TELEGRAM_RESPONSE");
+
+                if (msg && (msg->file))
+                {
+                    ESP_LOGI(TAG, "file_id: %s %lf", msg->file->id, *chat_id);
+                    telegram_send_text_message(teleCtx_ptr, *chat_id,  msg->file->id);
+                }
+            }
+            break; 
+
+        case TELEGRAM_WRITE_DATA:
+            ESP_LOGI(TAG, "TELEGRAM_WRITE_DATA");
+            break;
+
+        case TELEGRAM_ERR:
+            ESP_LOGE(TAG, "TELEGRAM_ERR");
+            break;
+
+        case TELEGRAM_END:
+            ESP_LOGI(TAG, "TELEGRAM_END");
+            free(ctx);
+            break;
+
+        default:
+            break;
+    }
+
+    return 0;
 }
 
 static void cmd_testfile(const char *cmd_name, cmd_additional_info_t *info, void *private)
 {
     telegram_event_msg_t *evt = (telegram_event_msg_t *)info->cmd_data;
-    telegram_send_file(info->arg, evt->chat_id, "test", "test.txt", 256, NULL, send_testfile_cb);
+    telegram_int_t *chat_id = calloc(1, sizeof(telegram_int_t));
+
+    *chat_id = evt->chat_id;
+    telegram_send_file_e(info->arg, evt->chat_id, "test", "test.txt", 256, chat_id, send_testfile_cb);
 }
 
 

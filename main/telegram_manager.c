@@ -236,10 +236,9 @@ static void cmd_telegram_alist_add(const char *cmd_name, cmd_additional_info_t *
 {
     char tmp[32];
     telegram_int_t *chat_id_mem;
-    telegram_cclist_search_helper_t hlp;
     telegram_event_msg_t *evt = ((telegram_event_msg_t *)info->cmd_data);
+    telegram_cclist_search_helper_t hlp = {.id = evt->user_id,};
     char *chat_id = (char *)&evt->text[strlen(cmd_name)];
-    telegram_int_t chat_id_add = evt->user_id;
 
     if (info->transport != CMD_SRC_TELEGRAM)
     {
@@ -248,17 +247,16 @@ static void cmd_telegram_alist_add(const char *cmd_name, cmd_additional_info_t *
 
     if (chat_id != '\0')
     {
-        sscanf(chat_id, "%lf", &chat_id_add);
+        sscanf(chat_id + 1, "%lf", &hlp.id);
     }
 
-    hlp.id = chat_id_add;
     hlp.present = false;
     if (adminList != NULL)
     {
         telegram_cclist_search(adminList, &hlp);
         if (hlp.present)
         {
-            snprintf(tmp, 32, "FAIL, Present: %.0lf", hlp.id);
+            snprintf(tmp, 32, "FAIL, Present: %.0f", hlp.id);
             telegram_send_text_message(evt->ctx, evt->chat_id, tmp);    
             return;
         }
@@ -271,10 +269,10 @@ static void cmd_telegram_alist_add(const char *cmd_name, cmd_additional_info_t *
         return;
     }
 
-    *chat_id_mem = evt->chat_id;
+    *chat_id_mem = hlp.id;
     adminList = tlist_add(adminList, chat_id_mem);
     telegram_cclist_save(adminList, "TELEGRAM_ADMIN_LIST", true);
-    snprintf(tmp, 32, "OK, Added: %.0lf", hlp.id);
+    snprintf(tmp, 32, "OK, Added: %.0f", hlp.id);
     telegram_send_text_message(evt->ctx, evt->chat_id, tmp);    
 }
 

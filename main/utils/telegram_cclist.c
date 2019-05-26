@@ -112,7 +112,7 @@ void telegram_cclist_save(void *teleNList, char *var_name, bool attr)
 		return;
 	}
 
-	full_str = calloc(sizeof(char), len);
+	full_str = calloc(sizeof(char), len + 1);
 	if (full_str == NULL)
 	{
 		ESP_LOGE(TAG, "No mem!");

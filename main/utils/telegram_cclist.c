@@ -5,7 +5,7 @@
 #include "ram_var_stor.h"
 #include "tlist.h"
 
-const char *cclist_fmt_str = "%lf ";
+const char *cclist_fmt_str = "%.0lf ";
 
 static const char *TAG="cclist";
 
@@ -42,8 +42,10 @@ static bool telegram_cclist_search_cb(void *ctx, void *data, void *tlist_el)
 
 	if (hlp->present)
 	{
+		hlp->ptr = data;
 		hlp->tlist_el = tlist_el;
 	}
+
 
 	return hlp->present;
 }
@@ -137,4 +139,30 @@ void telegram_cclist_search(void *teleNList, telegram_cclist_search_helper_t *hl
 	{
 		tlist_for_each(teleNList, telegram_cclist_search_cb, hlp);
 	}
+}
+
+static void telegram_cclist_free_obj(void *ctx, void *data)
+{
+	free(data);
+}
+
+void telegram_cclist_free(void *teleNList)
+{
+	tlist_free_all(teleNList, telegram_cclist_free_obj, NULL);
+}
+
+bool telegram_cclist_del(void *teleNList, telegram_int_t chat_id)
+{
+	telegram_cclist_search_helper_t hlp = {.id = chat_id}; 
+
+	telegram_cclist_search(teleNList, &hlp);
+
+	if (!hlp.present)
+	{
+		return false;
+	}
+
+	telegram_cclist_free_obj(NULL, hlp.ptr);
+	tlist_del_one(hlp.tlist_el);
+	return true;
 }

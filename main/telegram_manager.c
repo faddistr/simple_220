@@ -4,11 +4,14 @@
 #include "telegram.h"
 #include "ram_var_stor.h"
 #include "telegram_events.h"
+#include "tlist.h"
+#include "telegram_cclist.h"
+#include "cmd_executor.h"
 #include "module.h"
 
 static const char *TAG="TELEGRAM_MANAGER";
 static void *teleCtx;
-
+static void *adminList;
 ESP_EVENT_DEFINE_BASE(TELEGRAM_BASE);
 
 static void telegram_new_message(void *teleCtx, telegram_update_t *info)
@@ -21,7 +24,6 @@ static void telegram_new_message(void *teleCtx, telegram_update_t *info)
     {
         return;
     }
-
     size_required = sizeof(telegram_event_msg_t) + strlen(msg->text) + 1;
 
     event_msg = calloc(size_required, 1);
@@ -123,6 +125,27 @@ static void telegram_new_obj(void *teleCtx, telegram_update_t *info)
         return;
     }
 
+    if (adminList)
+    {
+        telegram_chat_message_t *msg = telegram_get_message(info);
+        telegram_cclist_search_helper_t hlp = {};
+
+        if (msg)
+        {
+            hlp.id = telegram_get_user_id(msg);
+
+            telegram_cclist_search(adminList, &hlp);
+            if (!hlp.present)
+            {
+                ESP_LOGW(TAG, "REJECTED FROM: %.0lf", hlp.id);
+                return;
+            }
+        } else
+        {
+            return;
+        }
+    }
+
     telegram_new_message(teleCtx, info);
     telegram_new_file(teleCtx, info);
 }
@@ -164,6 +187,8 @@ static void ip_event_handler(void *ctx, esp_event_base_t event_base, int32_t eve
                         TELEGRAM_ERROR, &err, sizeof(err), portMAX_DELAY));
                     return;
                 }
+
+                adminList = telegram_cclist_load(adminList, "TELEGRAM_ADMIN_LIST");
                 
                 ESP_LOGI(TAG, "Telegram started! %X", (uint32_t)teleCtx);
 
@@ -178,6 +203,8 @@ static void ip_event_handler(void *ctx, esp_event_base_t event_base, int32_t eve
                 TELEGRAM_STOP, &teleCtx, sizeof(teleCtx), portMAX_DELAY));
             telegram_stop(teleCtx);
             teleCtx = NULL;
+            telegram_cclist_free(adminList);
+            adminList = NULL;
             break;
 
         default:
@@ -205,4 +232,124 @@ static void telegram_manager_init(void)
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, ESP_EVENT_ANY_ID, ip_event_handler, NULL));
 }
 
+static void cmd_telegram_alist_add(const char *cmd_name, cmd_additional_info_t *info, void *private)
+{
+    char tmp[32];
+    telegram_int_t *chat_id_mem;
+    telegram_cclist_search_helper_t hlp;
+    telegram_event_msg_t *evt = ((telegram_event_msg_t *)info->cmd_data);
+    char *chat_id = (char *)&evt->text[strlen(cmd_name)];
+    telegram_int_t chat_id_add = evt->user_id;
+
+    if (info->transport != CMD_SRC_TELEGRAM)
+    {
+        return;
+    }
+
+    if (chat_id != '\0')
+    {
+        sscanf(chat_id, "%lf", &chat_id_add);
+    }
+
+    hlp.id = chat_id_add;
+    hlp.present = false;
+    if (adminList != NULL)
+    {
+        telegram_cclist_search(adminList, &hlp);
+        if (hlp.present)
+        {
+            snprintf(tmp, 32, "FAIL, Present: %.0lf", hlp.id);
+            telegram_send_text_message(evt->ctx, evt->chat_id, tmp);    
+            return;
+        }
+    } 
+
+    chat_id_mem = calloc(sizeof(telegram_int_t), 1);
+    if (chat_id_mem == NULL)
+    {
+        ESP_LOGE(TAG, "No mem!");
+        return;
+    }
+
+    *chat_id_mem = evt->chat_id;
+    adminList = tlist_add(adminList, chat_id_mem);
+    telegram_cclist_save(adminList, "TELEGRAM_ADMIN_LIST", true);
+    snprintf(tmp, 32, "OK, Added: %.0lf", hlp.id);
+    telegram_send_text_message(evt->ctx, evt->chat_id, tmp);    
+}
+
+static void cmd_telegram_alist_show(const char *cmd_name, cmd_additional_info_t *info, void *private)
+{
+    char *cclist = NULL;
+    telegram_event_msg_t *evt = ((telegram_event_msg_t *)info->cmd_data);
+
+    if (info->transport != CMD_SRC_TELEGRAM)
+    {
+        return;
+    }
+
+    cclist = var_get("TELEGRAM_ADMIN_LIST");
+    if (cclist != NULL)
+    {
+        telegram_send_text_message(evt->ctx, evt->chat_id, cclist);
+    } else
+    {
+        telegram_send_text_message(evt->ctx, evt->chat_id, "NULL");
+    }
+
+    free(cclist);
+}
+
+static void cmd_telegram_alist_del(const char *cmd_name, cmd_additional_info_t *info, void *private)
+{
+    char tmp[32];
+    telegram_int_t chat_id_mem;
+    telegram_event_msg_t *evt = ((telegram_event_msg_t *)info->cmd_data);
+    char *chat_id = (char *)&evt->text[strlen(cmd_name)];
+
+    if (info->transport != CMD_SRC_TELEGRAM)
+    {
+        return;
+    }
+
+    if (chat_id == '\0')
+    {
+        telegram_send_text_message(evt->ctx, evt->chat_id, "Usage: alistd $chat_id");    
+        return;
+    }
+
+    if (adminList != NULL)
+    {
+        sscanf(chat_id, "%lf", &chat_id_mem);
+        if (!telegram_cclist_del(adminList, chat_id_mem))
+        {
+            telegram_send_text_message(evt->ctx, evt->chat_id, "FAIL:Not found!");    
+            return;
+        }
+
+        snprintf(tmp, 32, "OK, Deleted: %s", chat_id);
+        telegram_send_text_message(evt->ctx, evt->chat_id, tmp);    
+        return;
+        
+    } else
+    {
+        telegram_send_text_message(evt->ctx, evt->chat_id, "FAIL list is NULL"); 
+    }
+}
+
+
 module_init(telegram_manager_init);
+cmd_register_static({
+    {
+        .name = "alista",
+        .cmd_cb = cmd_telegram_alist_add,
+    },
+    {
+        .name = "alistd",
+        .cmd_cb = cmd_telegram_alist_del,
+    },
+    {
+        .name = "alists",
+        .cmd_cb = cmd_telegram_alist_show,
+    },
+});

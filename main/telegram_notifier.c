@@ -116,16 +116,6 @@ static void telegram_notifier_send_for_all(char *str_to_send)
 	tlist_for_each(teleNList, telegram_notifier_send_to_one, str_to_send);
 }
 
-static void telegram_notifier_free_obj(void *ctx, void *data)
-{
-	free(data);
-}
-
-static void telegram_notifier_free(void)
-{
-	tlist_free_all(teleNList, telegram_notifier_free_obj, NULL);
-}
-
 static void telegram_notifier_send_event(event_to_send_t *event)
 {
 	char tmp[64];
@@ -190,7 +180,8 @@ static void telegram_event_handler(void *ctx, esp_event_base_t event_base, int32
 					ESP_EVENT_ANY_BASE, ESP_EVENT_ANY_ID, all_event_handler));
 
 				teleCtx = NULL;
-				telegram_notifier_free();
+				telegram_cclist_free(teleNList);
+				teleNList = NULL;
 			}
     		break;
 

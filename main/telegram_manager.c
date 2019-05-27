@@ -98,7 +98,6 @@ static void telegram_new_file(void *teleCtx, telegram_update_t *info)
         offset += strlen(file->mime_type) + 1;
     }
 
-
     if (msg->caption)
     {
         event_file->caption_str_offset = offset;
@@ -106,6 +105,9 @@ static void telegram_new_file(void *teleCtx, telegram_update_t *info)
         offset += strlen(msg->caption) + 1;
 
         ESP_LOGI(TAG, "caption = %s", msg->caption);
+    } else
+    {
+        event_file->caption_str_offset = offset;  
     }
 
     ESP_LOGI(TAG, "File: id: %s name: %s type: %s size: %lf chat_id: %lf", 

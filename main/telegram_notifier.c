@@ -142,17 +142,24 @@ static void all_event_handler(void *ctx, esp_event_base_t event_base, int32_t ev
 
 static void telegram_notifier_send_hello(void)
 {
-	const char *def_str = "Channel open!!!";
+	char *tmp = calloc(sizeof(char), 128);
+	char *file_id_current = var_get("TELEGRAM_FW_CURRENT");
+	const char *def_str = "Channel open";
 	char *heart_beat = var_get("TELEGRAM_NOTIFIER_HEARTBEAT");
+
 
 	if (heart_beat != NULL)
 	{
-		telegram_notifier_send_for_all(heart_beat);
+		sprintf(tmp, "%s %s", heart_beat, file_id_current?file_id_current:"SCRATCH");
 		free(heart_beat);
 	} else
 	{
-		telegram_notifier_send_for_all((char *)def_str);
+		sprintf(tmp, "%s %s", def_str, file_id_current?file_id_current:"SCRATCH");
 	}
+
+	telegram_notifier_send_for_all(tmp);
+	free(tmp);
+	free(file_id_current);
 }
 
 static void telegram_event_handler(void *ctx, esp_event_base_t event_base, int32_t event_id, void *event_data)

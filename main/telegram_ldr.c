@@ -5,6 +5,7 @@
 #include <esp_system.h>
 #include <string.h>
 #include "module.h"
+#include "ram_var_stor.h"
 #include "config.h"
 #include "cmd_executor.h"
 #include "telegram_events.h"
@@ -35,6 +36,7 @@ typedef struct
     uint32_t total_size;
     uint32_t counter;
     void *additional_ctx;
+    char *file_id;
 } ioFile_helper_t;
 
 static uint32_t send_config(ioFile_helper_t *hlp, telegram_write_data_evt_t *hnd, void *teleCtx_ptr)
@@ -157,8 +159,17 @@ static void receive_config_fin(ioFile_helper_t *hlp, void *teleCtx_ptr)
 {
     if (hlp->counter > 0)
     {
+        char *file_id_current = var_get("TELEGRAM_CONFIG_CURRENT");
         config_load_vars_mem(hlp->buf, hlp->counter);
         telegram_send_text_message(teleCtx_ptr, hlp->chat_id, "Config loaded!");
+
+        if (file_id_current)
+        {
+            var_add_attr("TELEGRAM_CONFIG_PREVIOUS", file_id_current, true);
+            free(file_id_current);
+        }
+
+        var_add_attr("TELEGRAM_CONFIG_CURRENT", hlp->file_id, true);
     }
 }
 
@@ -191,6 +202,17 @@ static void receive_fw_fin(ioFile_helper_t *hlp, void *teleCtx_ptr)
     free(ota);
     if (err == ESP_OK)
     {
+        char *file_id_current = var_get("TELEGRAM_FW_CURRENT");
+
+        if (file_id_current)
+        {
+             var_add_attr("TELEGRAM_FW_PREVIOUS", file_id_current, true);
+             free(file_id_current);
+        }
+
+        var_add_attr("TELEGRAM_FW_CURRENT", hlp->file_id, true);
+        config_save_vars();
+
         telegram_send_text_message(teleCtx_ptr, hlp->chat_id, "FW loaded!");
         esp_restart();
     } else
@@ -267,6 +289,7 @@ static uint32_t load_file_cb(telegram_data_event_t evt, void *teleCtx_ptr, void 
         case TELEGRAM_END:
             ESP_LOGI(TAG, "TELEGRAM_END");
             io_file_fin(hlp, teleCtx_ptr);
+            free(hlp->file_id);
             free(hlp->buf);
             free(hlp);
             break;
@@ -351,6 +374,7 @@ static ioFile_helper_t *receive_fw(telegram_event_file_t *evt)
         {
             break;
         }
+
     } while(0);
 
     if (err != ESP_OK)
@@ -388,12 +412,12 @@ static void receive_file(telegram_event_file_t * evt)
         hlp = receive_fw(evt);
     }
 
-
     if (hlp)
     {
         hlp->income = true;
         hlp->chat_id = evt->chat_id;
         hlp->total_size = evt->file_size;
+        hlp->file_id = strdup(file_id);
         telegram_get_file_e(evt->ctx, file_id, hlp, load_file_cb);
     }
 }

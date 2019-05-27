@@ -1,174 +1,264 @@
 #include <freertos/FreeRTOS.h>
 #include <esp_log.h>
 #include <esp_event.h>
+#include <esp_ota_ops.h>
+#include <esp_system.h>
 #include <string.h>
 #include "module.h"
 #include "config.h"
 #include "cmd_executor.h"
 #include "telegram_events.h"
 
+#define TELEGRAM_MAX_CONFIG_SIZE (4096U)
+#define TELEGRAM_MAX_FW_SIZE (1024U * 1024U)
+
 static const char *TAG="telegram_ldr";
-static TaskHandle_t teleOTAHnd;
 
-static void *teleCtx;
-static telegram_event_file_t *file_evt;
-static telegram_document_t file;
-static char *file_path;
-
-static uint8_t *config_buffer;
-static uint32_t counter;
-static telegram_int_t chat_id;
+typedef enum
+{
+    TELEGRAM_CONFIG,
+    TELEGRAM_FW,
+} telegram_file_t;
 
 typedef struct
 {
-    uint8_t *send_ptr;
+    esp_ota_handle_t hnd;
+    const esp_partition_t *partition;   
+} fw_load_ctx_t;
+
+typedef struct
+{
+    telegram_file_t file_type;
+    bool income;
+    uint8_t *buf;
+    telegram_int_t chat_id;
     uint32_t total_size;
     uint32_t counter;
-    telegram_int_t chat_id;
-} getFile_helper_t;
+    void *additional_ctx;
+} ioFile_helper_t;
 
-static bool telegram_load_config_cb(void *ctx, uint8_t *buf, int size, int total_len)
+static uint32_t send_config(ioFile_helper_t *hlp, telegram_write_data_evt_t *hnd, void *teleCtx_ptr)
 {
-    //TODO context
-    if ((size == 0) && (config_buffer) && (counter > 0))
+    uint32_t part_size = hnd->pice_size;
+
+    if (part_size > hlp->total_size)
     {
-        config_load_vars_mem(config_buffer, counter);
-        free(config_buffer);
-        config_buffer = NULL;
-  
-        telegram_send_text_message(ctx, chat_id, "Config loaded!");
-        return true;
+        part_size = hlp->total_size;
     }
 
-    if (size < 0)
+    memcpy(hnd->buf, &hlp->buf[hlp->counter], part_size);
+
+    hlp->total_size -= part_size;
+    hlp->counter += part_size;
+    return part_size;
+}
+
+static uint32_t send_file_prc(ioFile_helper_t *hlp, telegram_write_data_evt_t *hnd, void *teleCtx_ptr)
+{
+    if (hlp->income)
     {
-        free(config_buffer);
-        config_buffer = NULL;
-        return false;
+        ESP_LOGE(TAG, "Wrong state!(1)");
+        return 0;
     }
 
-    if ((total_len > 0) && (!config_buffer))
+    switch (hlp->file_type)
     {
-        config_buffer = calloc(sizeof(uint8_t), total_len);
-        counter = 0;
-        if (!config_buffer)
+        case TELEGRAM_CONFIG:
+            return send_config(hlp, hnd, teleCtx_ptr);
+        
+        default:
+            ESP_LOGE(TAG, "Wrong state!(2)");
+            break;
+    }
+
+    return 0;
+}
+
+static void send_file_response(ioFile_helper_t *hlp, telegram_update_t *update, void *teleCtx_ptr)
+{
+    telegram_chat_message_t *msg = telegram_get_message(update);
+    
+    if (hlp->income)
+    {
+        ESP_LOGE(TAG, "Wrong state!(3)");
+        return;
+    }
+
+    if (msg && (msg->file))
+    {
+        ESP_LOGI(TAG, "file_id: %s", msg->file->id);
+        telegram_send_text_message(teleCtx_ptr, hlp->chat_id,  msg->file->id);
+    }
+}
+
+static uint32_t receive_config_prc(ioFile_helper_t *hlp, telegram_write_data_evt_t *hnd, void *teleCtx_ptr)
+{
+    if (hnd->pice_size > hlp->total_size)
+    {
+        ESP_LOGE(TAG, "To big packet!");
+        return 0;
+    }
+
+    memcpy(&hlp->buf[hlp->counter], hnd->buf, hnd->pice_size);
+    hlp->counter += hnd->pice_size;    
+
+    return hnd->pice_size;
+}
+
+static uint32_t receive_fw_prc(ioFile_helper_t *hlp, telegram_write_data_evt_t *hnd, void *teleCtx_ptr)
+{
+    fw_load_ctx_t *ota = (fw_load_ctx_t *)hlp->additional_ctx;
+    esp_err_t err = esp_ota_write(ota->hnd, 
+        (const void *)hnd->buf, hnd->pice_size);
+
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "OTA failed! %d", err);
+        return 0;
+    }
+
+    return hnd->pice_size;
+}
+
+
+static void send_err_user(void *teleCtx_ptr, telegram_int_t chat_id, const char *err_descr, esp_err_t err_code)
+{
+    char tmp[32];
+
+    strncpy(tmp, err_descr, 23);
+    sprintf(&tmp[strlen(tmp)], " %X", err_code);
+    telegram_send_text_message(teleCtx_ptr, chat_id, tmp);
+}
+
+static uint32_t load_file_prc(ioFile_helper_t *hlp, telegram_write_data_evt_t *hnd, void *teleCtx_ptr)
+{
+    if (!hlp->income)
+    {
+        ESP_LOGE(TAG, "Wrong state!(4)");
+        return 0    ;
+    }
+
+    switch (hlp->file_type)
+    {
+        case TELEGRAM_CONFIG:
+            return receive_config_prc(hlp, hnd, teleCtx_ptr);
+
+        case TELEGRAM_FW:
+            return receive_fw_prc(hlp, hnd, teleCtx_ptr);
+        
+        default:
+            ESP_LOGE(TAG, "Wrong state!(5)");
+            break;
+    }
+
+    return 0;
+}
+
+static void receive_config_fin(ioFile_helper_t *hlp, void *teleCtx_ptr)
+{
+    if (hlp->counter > 0)
+    {
+        config_load_vars_mem(hlp->buf, hlp->counter);
+        telegram_send_text_message(teleCtx_ptr, hlp->chat_id, "Config loaded!");
+    }
+}
+
+static void receive_fw_fin(ioFile_helper_t *hlp, void *teleCtx_ptr)
+{
+    fw_load_ctx_t *ota = (fw_load_ctx_t *)hlp->additional_ctx;
+    esp_err_t err;
+
+    if (ota == NULL)
+    {
+        return;
+    }
+
+    do
+    {
+        err = esp_ota_end(ota->hnd);
+        if (err != ESP_OK)
         {
-            ESP_LOGE(TAG, "No mem");
-            return false;
+            break;
         }
-    }
 
-    if ((size > 0) && (config_buffer))
+        err = esp_ota_set_boot_partition(ota->partition);
+        if (err != ESP_OK)
+        {
+            break;
+        }
+    } while(0);
+
+
+    free(ota);
+    if (err == ESP_OK)
     {
-        memcpy(&config_buffer[counter], buf, size);
-        counter += size;
+        telegram_send_text_message(teleCtx_ptr, hlp->chat_id, "FW loaded!");
+        esp_restart();
+    } else
+    {
+        send_err_user(teleCtx_ptr, hlp->chat_id, "Load new FW failed:", err);
     }
-
-    return true;
 }
 
-static void telegram_event_handler(void *ctx, esp_event_base_t event_base, int32_t event_id, void *event_data)
+static void load_file_fin(ioFile_helper_t *hlp, void *teleCtx_ptr)
 {
-	switch (event_id)
-	{
-    	case TELEGRAM_STOP:
-    		if (teleCtx != NULL)
-    		{
-    			ESP_LOGI(TAG, "Telegram stopped!");
-    			free(file_evt);
-				vTaskDelete(teleOTAHnd);
-			}
-    		break;
+    switch (hlp->file_type)
+    {
+        case TELEGRAM_CONFIG:
+            receive_config_fin(hlp, teleCtx_ptr);
+            break;
 
-    	case TELEGRAM_FILE:
-    		if (teleCtx == NULL)
-    		{
-    			telegram_event_file_t *evt = (telegram_event_file_t *)event_data;
-
-    			teleCtx = evt->ctx;
-                file_evt = calloc(sizeof(telegram_event_file_t) + evt->data_size, 1);
-                if (file_evt == NULL)
-                {
-                    ESP_LOGE(TAG, "No mem!");
-                    return;
-                }
-
-    			memcpy(file_evt, evt, sizeof(telegram_event_file_t) + evt->data_size);
-
-                file.id = &file_evt->blob[file_evt->id_str_offset];
-                file.mime_type = &file_evt->blob[file_evt->mime_type_str_offset];
-                file.name = &file_evt->blob[file_evt->name_str_offset];
-                file.file_size = file_evt->file_size;
-
-                ESP_LOGI(TAG, "File: id: %s name: %s type: %s size: %lf chat_id: %lf", 
-                    file.id, file.name, file.mime_type, file.file_size, file_evt->chat_id);
-
-                file_path = telegram_get_file_path(teleCtx, file.id);
-
-                telegram_send_text_message(teleCtx, file_evt->chat_id, file.id);
-                telegram_send_text_message(teleCtx, file_evt->chat_id, file_path);
-    		//	xTaskCreate(&telegram_ota_task, "telegram_ota_task", 8192, NULL, 6, &teleOTAHnd);
-
-                if (!strcmp(file.name, "config.txt"))
-                {
-                    chat_id = file_evt->chat_id;
-                    telegram_get_file(teleCtx, file.id, teleCtx, telegram_load_config_cb);
-                }
-                
-                free(file_evt);
-                free(file_path);
-                teleCtx = NULL;
-    		}
-    		break;
-
-    	default:
-    		break;
-	}
+        case TELEGRAM_FW:
+            receive_fw_fin(hlp, teleCtx_ptr);
+            break;
+        
+        default:
+            ESP_LOGE(TAG, "Wrong state!(6)");
+            break;
+    }
 }
 
-static uint32_t send_file_cb(telegram_data_event_t evt, void *teleCtx_ptr, void *ctx, void *evt_data)
+static void send_file_fin(ioFile_helper_t *hlp, void *teleCtx_ptr)
 {
-    getFile_helper_t *hlp = (getFile_helper_t *)ctx;
-    telegram_write_data_evt_t *hnd = (telegram_write_data_evt_t *)evt_data;
-     uint32_t part_size;
-    telegram_update_t *update = (telegram_update_t *)evt_data;
+    switch (hlp->file_type)
+    {
+        case TELEGRAM_CONFIG:
+            break;
 
+        default:
+            ESP_LOGE(TAG, "Wrong state!(7)");
+            break;
+    }   
+}
+
+static void io_file_fin(ioFile_helper_t *hlp, void *teleCtx_ptr)
+{
+    if (hlp->income)
+    {
+        load_file_fin(hlp, teleCtx_ptr);
+    } else
+    {
+        send_file_fin(hlp, teleCtx_ptr);
+    }
+}
+
+static uint32_t load_file_cb(telegram_data_event_t evt, void *teleCtx_ptr, void *ctx, void *evt_data)
+{
+    ioFile_helper_t *hlp = (ioFile_helper_t *)ctx;
+    
     switch (evt)
     {
         case TELEGRAM_READ_DATA:   
-            {
-               
-                part_size = hnd->pice_size;
-
-                if (part_size > hlp->total_size)
-                {
-                    part_size = hlp->total_size;
-                }
-
-                memcpy(hnd->buf, &hlp->send_ptr[hlp->counter], part_size);
-
-                hlp->total_size -= part_size;
-                hlp->counter += part_size;
-                return part_size;
-            }
-            break;
+            ESP_LOGI(TAG, "TELEGRAM_READ_DATA");
+            return send_file_prc(hlp, (telegram_write_data_evt_t *)evt_data, teleCtx_ptr);
 
         case TELEGRAM_RESPONSE:
-            {
-                telegram_chat_message_t *msg = telegram_get_message(update);
-                ESP_LOGI(TAG, "TELEGRAM_RESPONSE");
-
-                if (msg && (msg->file))
-                {
-                    ESP_LOGI(TAG, "file_id: %s", msg->file->id);
-                    telegram_send_text_message(teleCtx_ptr, hlp->chat_id,  msg->file->id);
-                }
-            }
+            ESP_LOGI(TAG, "TELEGRAM_RESPONSE");
+            send_file_response(hlp, (telegram_update_t *)evt_data, teleCtx_ptr);
             break; 
 
         case TELEGRAM_WRITE_DATA:
             ESP_LOGI(TAG, "TELEGRAM_WRITE_DATA");
-            break;
+            return load_file_prc(hlp, (telegram_write_data_evt_t *)evt_data, teleCtx_ptr);
 
         case TELEGRAM_ERR:
             ESP_LOGE(TAG, "TELEGRAM_ERR");
@@ -176,7 +266,8 @@ static uint32_t send_file_cb(telegram_data_event_t evt, void *teleCtx_ptr, void 
 
         case TELEGRAM_END:
             ESP_LOGI(TAG, "TELEGRAM_END");
-            free(hlp->send_ptr);
+            io_file_fin(hlp, teleCtx_ptr);
+            free(hlp->buf);
             free(hlp);
             break;
 
@@ -187,10 +278,147 @@ static uint32_t send_file_cb(telegram_data_event_t evt, void *teleCtx_ptr, void 
     return 0;
 }
 
+static ioFile_helper_t *receive_config(telegram_event_file_t *evt)
+{
+    ioFile_helper_t *hlp = NULL;
+    if (evt->file_size > TELEGRAM_MAX_CONFIG_SIZE)
+    {
+        return NULL;
+    }
+
+    hlp = (ioFile_helper_t *)calloc(sizeof(ioFile_helper_t), 1);
+    if (hlp == NULL)
+    {
+        return NULL;
+    }
+
+    hlp->buf = (uint8_t *)calloc(sizeof(uint8_t), evt->file_size);
+    if (!hlp->buf)
+    {
+        free(hlp);
+        return NULL;
+    }
+
+    hlp->file_type = TELEGRAM_CONFIG;
+
+
+    return hlp;
+}
+
+static ioFile_helper_t *receive_fw(telegram_event_file_t *evt)
+{
+    ioFile_helper_t *hnd = NULL;
+    esp_err_t err;
+    fw_load_ctx_t *ota;
+
+    if (evt->file_size > TELEGRAM_MAX_FW_SIZE)
+    {
+        ESP_LOGW(TAG, "total_size > TELEGRAM_MAX_FW_SIZE");
+        return NULL;
+    }
+
+    hnd = (ioFile_helper_t *)calloc(sizeof(ioFile_helper_t), 1);
+    if (hnd == NULL)
+    {
+        ESP_LOGE(TAG, "No mem!");
+        return NULL;
+    }
+
+    hnd->file_type = TELEGRAM_FW;
+
+    hnd->additional_ctx = calloc(sizeof(fw_load_ctx_t), 1);
+    if (!hnd->additional_ctx)
+    {
+        free(hnd);
+        ESP_LOGE(TAG, "No mem!");
+        return NULL;
+    }
+
+    ESP_LOGI(TAG, "Starting OTA...");
+    ota = (fw_load_ctx_t *)hnd->additional_ctx;
+    do
+    {
+        ota->partition = esp_ota_get_next_update_partition(NULL);
+        if (ota->partition == NULL)
+        {
+            ESP_LOGE(TAG, "Passive OTA partition not found");
+            err = ESP_ERR_NOT_FOUND;
+            break;
+        }
+
+        err = esp_ota_begin(ota->partition, OTA_SIZE_UNKNOWN, &ota->hnd);
+        if (err != ESP_OK)
+        {
+            break;
+        }
+    } while(0);
+
+    if (err != ESP_OK)
+    {
+        free(ota);
+        hnd->additional_ctx = NULL;
+        free(hnd);
+        hnd = NULL;
+        send_err_user(evt->ctx, evt->chat_id, "Failed to start OTA:", err);
+    }
+
+
+    return hnd;
+}
+
+
+static void receive_file(telegram_event_file_t * evt)
+{
+    ioFile_helper_t *hlp = NULL;
+    char *file_id = (char *)&evt->blob[evt->id_str_offset];
+    char *caption = (char *)&evt->blob[evt->caption_str_offset];
+
+    if (caption == '\0')
+    {
+        return;
+    }
+
+    if (!strcmp(caption, "config"))
+    {
+        hlp = receive_config(evt);
+    }
+
+    if (!strcmp(caption, "fw"))
+    {
+        hlp = receive_fw(evt);
+    }
+
+
+    if (hlp)
+    {
+        hlp->income = true;
+        hlp->chat_id = evt->chat_id;
+        hlp->total_size = evt->file_size;
+        telegram_get_file_e(evt->ctx, file_id, hlp, load_file_cb);
+    }
+}
+
+static void telegram_event_handler(void *ctx, esp_event_base_t event_base, int32_t event_id, void *event_data)
+{
+	switch (event_id)
+	{
+    	case TELEGRAM_STOP:
+    		break;
+
+    	case TELEGRAM_FILE:
+            receive_file((telegram_event_file_t *)event_data);
+    		break;
+
+    	default:
+    		break;
+	}
+}
+
+
 static void cmd_configfile(const char *cmd_name, cmd_additional_info_t *info, void *private)
 {
     telegram_event_msg_t *evt = (telegram_event_msg_t *)info->cmd_data;
-    getFile_helper_t *ctx = calloc(sizeof(getFile_helper_t), 1);
+    ioFile_helper_t *ctx = calloc(sizeof(ioFile_helper_t), 1);
 
     if (ctx == NULL)
     {
@@ -199,15 +427,15 @@ static void cmd_configfile(const char *cmd_name, cmd_additional_info_t *info, vo
     }
 
     ctx->chat_id = evt->chat_id;
-    ctx->send_ptr = config_get_vars_mem(&ctx->total_size);
+    ctx->buf = config_get_vars_mem(&ctx->total_size);
 
-    if ((ctx->send_ptr == NULL) || (ctx->total_size == 0))
+    if ((ctx->buf == NULL) || (ctx->total_size == 0))
     {
         ESP_LOGE(TAG, "Failed to get config");
         return;
     }
 
-    telegram_send_file_e(info->arg, evt->chat_id, "config", "config.txt", ctx->total_size, ctx, send_file_cb);
+    telegram_send_file_e(info->arg, evt->chat_id, "config", "config.txt", ctx->total_size, ctx, load_file_cb);
 }
 
 static void cmd_getpath(const char *cmd_name, cmd_additional_info_t *info, void *private)

@@ -142,7 +142,7 @@ static void all_event_handler(void *ctx, esp_event_base_t event_base, int32_t ev
 
 static void telegram_notifier_send_hello(void)
 {
-	const char *def_str = "Channel open!";
+	const char *def_str = "Channel open!!!";
 	char *heart_beat = var_get("TELEGRAM_NOTIFIER_HEARTBEAT");
 
 	if (heart_beat != NULL)

@@ -10,7 +10,7 @@
 #include "telegram_events.h"
 
 #define TELEGRAM_MAX_CONFIG_SIZE (4096U)
-#define TELEGRAM_MAX_FW_SIZE (1024U * 1024U)
+#define TELEGRAM_MAX_FW_SIZE (2U * 1024U * 1024U)
 
 static const char *TAG="telegram_ldr";
 

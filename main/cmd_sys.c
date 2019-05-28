@@ -204,6 +204,9 @@ static void cmd_delvar_cb(const char *cmd_name, cmd_additional_info_t *info, voi
 
 static void cmd_reset_cb(const char *cmd_name, cmd_additional_info_t *info, void *private)
 {
+	telegram_event_msg_t *evt = (telegram_event_msg_t *)info->cmd_data;
+	
+	telegram_send_text_message(info->arg, evt->chat_id,  "Will now restart!");
 	esp_restart();
 }
 

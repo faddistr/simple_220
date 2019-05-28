@@ -43,7 +43,7 @@ static esp_err_t plug_set_key(plug_key_t key_num, bool val)
     }
 
     sprintf(name, PLUG_NAME_TMP"%d", (uint32_t)key_num);
-    var_add_attr(name, val?"0":"1", true);
+    var_add_attr(name, val?"1":"0", true);
 
 	return gpio_set_level(plug_keys[key_num], !val);
 }

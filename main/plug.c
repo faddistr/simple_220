@@ -144,6 +144,37 @@ static void cmd_plug_cb(const char *cmd_name, cmd_additional_info_t *info, void 
 }
 
 
+static void cmd_plug_kbrd(const char *cmd_name, cmd_additional_info_t *info, void *private)
+{
+    telegram_event_msg_t *evt = ((telegram_event_msg_t *)info->cmd_data);
+
+    static telegram_kbrd_inline_btn_t kbrd_btns[] =
+    {
+        {.text = "1", .callback_data = "plug key 1 value 1"},
+        {.text = "2", .callback_data = "plug key 2 value 1"},
+        {.text = "3", .callback_data = "plug key 3 value 1"},
+        {.text = "4", .callback_data = "plug key 4 value 1"},
+        {}
+    };
+
+    static telegram_kbrd_t keyboard = 
+    {
+        .type = TELEGRAM_KBRD_INLINE,
+        .kbrd = {
+            .inl.buttons = kbrd_btns,
+        },
+    };
+
+    if (info->transport != CMD_SRC_TELEGRAM)
+    {
+        return;
+    }
+
+    
+    telegram_kbrd(evt->ctx, evt->chat_id, "Select plug to activate", &keyboard);
+}
+
+
 static void init_keys(void)
 {
 	gpio_config_t io_conf = {
@@ -196,7 +227,11 @@ cmd_register_static({
 {
     .name = "plug",
     .cmd_cb = cmd_plug_cb,
-} 
+},
+{
+    .name = "p",
+    .cmd_cb = cmd_plug_kbrd,
+}
 });
 
 module_init(plug_init);

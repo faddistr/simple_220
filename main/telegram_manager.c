@@ -150,6 +150,7 @@ static void telegram_new_obj(void *teleCtx, telegram_update_t *info)
 
     telegram_new_message(teleCtx, info);
     telegram_new_file(teleCtx, info);
+    
 }
 
 static void ip_event_handler(void *ctx, esp_event_base_t event_base, int32_t event_id, void *event_data)

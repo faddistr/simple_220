@@ -97,7 +97,7 @@ static uint32_t receive_config_prc(ioFile_helper_t *hlp, telegram_write_data_evt
 {
     if (hnd->pice_size > hlp->total_size)
     {
-        ESP_LOGE(TAG, "To big packet!");
+        ESP_LOGE(TAG, "Too big packet!");
         return 0;
     }
 

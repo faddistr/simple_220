@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <esp_log.h>
+#include <esp_system.h>
 #include "ram_var_stor.h"
 #include "cmd_executor.h"
 #include "telegram.h"
@@ -201,6 +202,12 @@ static void cmd_delvar_cb(const char *cmd_name, cmd_additional_info_t *info, voi
 	}
 }
 
+static void cmd_reset_cb(const char *cmd_name, cmd_additional_info_t *info, void *private)
+{
+	esp_restart();
+}
+
+
 cmd_register_static({
 	{
 		.name = "GetVar",
@@ -218,7 +225,6 @@ cmd_register_static({
 	},
 
 	{
-
 		.name = "DelVar",
 		.cmd_cb = cmd_delvar_cb,
 	},
@@ -231,5 +237,10 @@ cmd_register_static({
 	{
 		.name = "Load",
 		.cmd_cb = cmd_loadvar_cb,
+	},
+
+	{
+		.name = "Reset",
+		.cmd_cb = cmd_reset_cb,
 	},
 });

@@ -9,6 +9,7 @@ enum {
     TELEGRAM_ERROR,
     TELEGRAM_MESSAGE,
     TELEGRAM_FILE,
+    TELEGRAM_CBQUERY,
 };
 
 typedef struct
@@ -33,6 +34,15 @@ typedef struct
 	telegram_int_t   file_size;
 	char			 blob[]; /* This member should be last */
 } telegram_event_file_t;
+
+typedef struct
+{
+	void 			 			 *ctx;
+	telegram_int_t				 user_id;
+	uint32_t		 			 id_str_offset;
+	uint32_t                     data_str_offset;
+	char blob[];  /* This member should be last */
+} telegram_event_cb_query_t;
 
 ESP_EVENT_DECLARE_BASE(TELEGRAM_BASE);
 

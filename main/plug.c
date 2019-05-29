@@ -28,6 +28,7 @@ typedef enum
 
 static const char *TAG="plug";
 static gpio_num_t plug_keys[] = {GPIO_KEY_0, GPIO_KEY_1, GPIO_KEY_2, GPIO_KEY_3}; 
+static bool key_vals[PLUG_KEY_NUM] = {};
 
 #define PLUG_NAME_TMP "PLUG_KEY_"
 
@@ -44,6 +45,7 @@ static esp_err_t plug_set_key(plug_key_t key_num, bool val)
 
     sprintf(name, PLUG_NAME_TMP"%d", (uint32_t)key_num);
     var_add_attr(name, val?"1":"0", true);
+    key_vals[key_num] = val;
 
 	return gpio_set_level(plug_keys[key_num], !val);
 }
@@ -147,21 +149,23 @@ static void cmd_plug_cb(const char *cmd_name, cmd_additional_info_t *info, void 
 static void cmd_plug_kbrd(const char *cmd_name, cmd_additional_info_t *info, void *private)
 {
     telegram_event_msg_t *evt = ((telegram_event_msg_t *)info->cmd_data);
+    static telegram_kbrd_inline_btn_t row1[] = {{.text = "1", .callback_data = "key 1"}, {.text = "2", .callback_data = "key 2"}, {NULL}};
+    static telegram_kbrd_inline_btn_t row2[] = {{.text = "3", .callback_data = "key 3"}, {.text = "4", .callback_data = "key 4"}, {NULL}};
+    static telegram_kbrd_inline_btn_t row3[] = {{.text = "3", .callback_data = "key 3"}, {.text = "4", .callback_data = "key 4"}, {.text = "4", .callback_data = "key 4"}, {NULL}};
 
-    static telegram_kbrd_inline_btn_t kbrd_btns[] =
+    static telegram_kbrd_inline_row_t kbrd_btns[] =
     {
-        {.text = "1", .callback_data = "plug key 1 value 1"},
-        {.text = "2", .callback_data = "plug key 2 value 1"},
-        {.text = "3", .callback_data = "plug key 3 value 1"},
-        {.text = "4", .callback_data = "plug key 4 value 1"},
-        {}
+        { row1, },
+        { row2, },
+        { row3, },
+        { NULL },
     };
 
     static telegram_kbrd_t keyboard = 
     {
         .type = TELEGRAM_KBRD_INLINE,
         .kbrd = {
-            .inl.buttons = kbrd_btns,
+            .inl.rows = kbrd_btns,
         },
     };
 
@@ -216,11 +220,26 @@ static void load_config(void)
     }
 }
 
+static void telegram_event_handler(void *ctx, esp_event_base_t event_base, int32_t event_id, void *event_data)
+{
+    uint32_t key_num;
+
+    telegram_event_cb_query_t *query = (telegram_event_cb_query_t *)event_data;
+    if ((sscanf(&query->blob[query->data_str_offset], "key %d", &key_num) == 1) && (key_num < PLUG_KEY_NUM))
+    {
+        plug_set_key(key_num, !key_vals[key_num]);
+        telegram_answer_cb_query(query->ctx, &query->blob[query->id_str_offset], key_vals[key_num]?"off":"on",
+            true, NULL, 0);
+    }
+}
+
 static void plug_init(void)
 {
     ESP_LOGI(TAG, "Starting plug manager...");
     init_keys();
     load_config();
+    ESP_ERROR_CHECK(esp_event_handler_register_with(simple_loop_handle, TELEGRAM_BASE, 
+        TELEGRAM_CBQUERY, telegram_event_handler, NULL));
 }
 
 cmd_register_static({

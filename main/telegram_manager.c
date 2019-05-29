@@ -119,6 +119,41 @@ static void telegram_new_file(void *teleCtx, telegram_update_t *info)
     free(event_file);
 }
 
+static void telegram_new_cbquery(void *teleCtx, telegram_update_t *info)
+{
+    uint32_t offset = 0;
+    uint32_t data_size = 0;
+    telegram_event_cb_query_t *query = NULL;
+    telegram_chat_callback_t  *cb = (telegram_chat_callback_t *)info->callback_query;
+
+    if (info->callback_query == NULL)
+    {        return;
+    }
+
+    data_size = sizeof(telegram_event_cb_query_t) + strlen(cb->id) + 1 + strlen(cb->data) + 1;
+    query = calloc(1, data_size);
+    if (!query)
+    {
+        ESP_LOGE(TAG, "No mem!");
+        return;
+    }
+
+    query->ctx = teleCtx;
+    query->user_id = cb->from->id;
+
+    query->id_str_offset = offset;
+    memcpy(&query->blob[query->id_str_offset], cb->id, strlen(cb->id) + 1);
+
+    offset += strlen(cb->id) + 1;
+    query->data_str_offset = offset;
+    memcpy(&query->blob[query->data_str_offset], cb->data, strlen(cb->data) + 1);
+
+    ESP_ERROR_CHECK(esp_event_post_to(simple_loop_handle, TELEGRAM_BASE, 
+        TELEGRAM_CBQUERY, query, data_size, portMAX_DELAY));
+
+    free(query);
+}
+
 static void telegram_new_obj(void *teleCtx, telegram_update_t *info)
 {
     /* telegram_update_t type is not compatible with esp_event_loop */
@@ -129,27 +164,20 @@ static void telegram_new_obj(void *teleCtx, telegram_update_t *info)
 
     if (adminList)
     {
-        telegram_chat_message_t *msg = telegram_get_message(info);
         telegram_cclist_search_helper_t hlp = {};
 
-        if (msg)
+        hlp.id = telegram_get_user_id_update(info);
+        telegram_cclist_search(adminList, &hlp);
+        if (!hlp.present)
         {
-            hlp.id = telegram_get_user_id(msg);
-
-            telegram_cclist_search(adminList, &hlp);
-            if (!hlp.present)
-            {
-                ESP_LOGW(TAG, "REJECTED FROM: %.0lf", hlp.id);
-                return;
-            }
-        } else
-        {
+            ESP_LOGW(TAG, "REJECTED FROM: %.0lf", hlp.id);
             return;
         }
     }
 
     telegram_new_message(teleCtx, info);
     telegram_new_file(teleCtx, info);
+    telegram_new_cbquery(teleCtx, info);
     
 }
 

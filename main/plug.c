@@ -296,12 +296,12 @@ static void load_config(void)
         {
             if (*cfg == '1')
             {
-                gpio_set_level(plug_keys[i], 0);
+                plug_set_key(i, true);
             }
 
             if (*cfg == '0')
             {
-                gpio_set_level(plug_keys[i], 1);
+                plug_set_key(i, false);
             }
 
             free(cfg);

@@ -1,0 +1,3 @@
+[submodule "components/telegram"]
+	path = components/telegram
+	url = git@github.com:faddistr/esp32_telegram_lib.git

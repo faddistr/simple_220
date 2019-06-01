@@ -418,7 +418,7 @@ static void receive_file(telegram_event_file_t * evt)
         hlp->chat_id = evt->chat_id;
         hlp->total_size = evt->file_size;
         hlp->file_id = strdup(file_id);
-        telegram_get_file_e(evt->ctx, file_id, hlp, load_file_cb);
+        telegram_get_file(evt->ctx, file_id, hlp, load_file_cb);
     }
 }
 
@@ -459,7 +459,7 @@ static void cmd_configfile(const char *cmd_name, cmd_additional_info_t *info, vo
         return;
     }
 
-    telegram_send_file_e(info->arg, evt->chat_id, "config", "config.txt", ctx->total_size, ctx, load_file_cb);
+    telegram_send_file(info->arg, evt->chat_id, "config", "config.txt", ctx->total_size, ctx, load_file_cb);
 }
 
 static void cmd_getpath(const char *cmd_name, cmd_additional_info_t *info, void *private)
@@ -545,7 +545,7 @@ static void cmd_testfile(const char *cmd_name, cmd_additional_info_t *info, void
     telegram_int_t *chat_id = calloc(1, sizeof(telegram_int_t));
 
     *chat_id = evt->chat_id;
-    telegram_send_file_e(info->arg, evt->chat_id, "test", "test.txt", 256, chat_id, send_testfile_cb);
+    telegram_send_file(info->arg, evt->chat_id, "test", "test.txt", 256, chat_id, send_testfile_cb);
 }
 
 

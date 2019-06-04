@@ -17,8 +17,6 @@ typedef struct
 	cmd_src_tansport_t transport;
 	void *arg; 
  	void *user_ses;
- 	config_t *sys_config;
- 	bool sys_config_changed;
  	void *cmd_data;
 } cmd_additional_info_t;
 

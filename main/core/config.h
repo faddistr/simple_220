@@ -2,7 +2,6 @@
 #define CONFIG_H
 
 #include <esp_err.h>
-#include "telegram.h"
 
 void config_save_vars(void);
 esp_err_t config_load_vars(void);

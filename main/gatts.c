@@ -14,6 +14,7 @@
 #include "ram_var_stor.h"
 #include "module.h"
 #include "config.h"
+#include "buttons_evt.h"
 
 static const char *TAG="GATTS";
 
@@ -516,4 +517,21 @@ static void gatts_init(void)
     }
 }
 
-module_init(gatts_init);
+static void buttons_event_handler(void *ctx, esp_event_base_t event_base, int32_t event_id, void *event_data)
+{
+	static bool is_started = false;
+
+	if (!is_started)
+	{
+		is_started = true;
+		gatts_init();
+	}
+}
+
+static void gatts_module_init(void)
+{
+	ESP_ERROR_CHECK(esp_event_handler_register_with(simple_loop_handle, BUTTONS_BASE, 
+    	BUTTON_PRESS, buttons_event_handler, NULL));
+}
+
+module_init(gatts_module_init);

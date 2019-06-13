@@ -1,0 +1,11 @@
+#ifndef BUTTONS_EVT_H
+#define BUTTONS_EVT_H
+#include <esp_event.h>
+enum
+{
+	BUTTON_PRESS,
+	BUTTON_UNPRESS
+};
+
+ESP_EVENT_DECLARE_BASE(BUTTONS_BASE);
+#endif /* BUTTONS_EVT_H */

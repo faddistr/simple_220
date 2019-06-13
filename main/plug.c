@@ -322,36 +322,48 @@ static void telegram_event_handler(void *ctx, esp_event_base_t event_base, int32
     }
 }
 
+static const cmd_command_descr_t plug_cmd[] = 
+{
+    {
+        .name = "plug",
+        .cmd_cb = cmd_plug_cb,
+    },
+    {
+        .name = "p",
+        .cmd_cb = cmd_plug_kbrd,
+    },
+    {
+        .name = "m",
+        .cmd_cb = cmd_plug_kbrd_markup,
+    },
+    {
+        .name = "mr",
+        .cmd_cb = cmd_plug_kbrd_markup_remove,
+    },
+    {
+        .name = "f",
+        .cmd_cb = cmd_plug_kbrd_force_reply,
+    }
+};
+
 static void plug_init(void)
 {
-    ESP_LOGI(TAG, "Starting plug manager...");
-    init_keys();
-    load_config();
-    ESP_ERROR_CHECK(esp_event_handler_register_with(simple_loop_handle, TELEGRAM_BASE, 
-        TELEGRAM_CBQUERY, telegram_event_handler, NULL));
-}
+    char *ena = var_get("HAS_PLUG");
 
-cmd_register_static({
-{
-    .name = "plug",
-    .cmd_cb = cmd_plug_cb,
-},
-{
-    .name = "p",
-    .cmd_cb = cmd_plug_kbrd,
-},
-{
-    .name = "m",
-    .cmd_cb = cmd_plug_kbrd_markup,
-},
-{
-    .name = "mr",
-    .cmd_cb = cmd_plug_kbrd_markup_remove,
-},
-{
-    .name = "f",
-    .cmd_cb = cmd_plug_kbrd_force_reply,
-},
-});
+    if ((ena != NULL) && (*ena == '1'))
+    {
+        free(ena);
+        ESP_LOGI(TAG, "Starting plug manager...");
+        init_keys();
+        load_config();
+        ESP_ERROR_CHECK(esp_event_handler_register_with(simple_loop_handle, TELEGRAM_BASE, 
+            TELEGRAM_CBQUERY, telegram_event_handler, NULL));
+
+        if (!cmd_register_many((cmd_command_descr_t *)plug_cmd, sizeof(plug_cmd) / sizeof(plug_cmd[0])))
+        {
+            ESP_LOGE(TAG, "Failed to add commands");
+        }
+    }
+}
 
 module_init(plug_init);

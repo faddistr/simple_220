@@ -31,6 +31,7 @@ typedef struct
 
 void cmd_init(void);
 bool cmd_register(cmd_command_descr_t *descr);
+bool cmd_register_many(cmd_command_descr_t *descr, uint32_t size);
 bool cmd_execute(const char *cmd_name, cmd_additional_info_t *info);
 
 #define cmd_register_static(...) \

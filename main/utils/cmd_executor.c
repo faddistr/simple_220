@@ -75,6 +75,21 @@ bool cmd_register(cmd_command_descr_t *descr)
 	return true;
 }
 
+bool cmd_register_many(cmd_command_descr_t *descr, uint32_t size)
+{
+	uint32_t i;
+
+	for (i = 0; i < size; i++)
+	{
+		if (!cmd_register(&descr[i]))
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
 void cmd_deinit(void)
 {
 	tlist_free_all(cmd, NULL, NULL);

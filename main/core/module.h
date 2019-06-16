@@ -4,10 +4,18 @@
 
 extern esp_event_loop_handle_t simple_loop_handle;
 
-typedef void(*initcall_t)(void);
+typedef struct
+{
+	void(*ptr)(void);
+	const char *file;
+} initcall_t;
+
 #define module_init(fn) \
 	 static const initcall_t __initcall_##fn  __attribute__((used)) \
-	__attribute__((__section__(".initcall_simple"))) = fn
+	__attribute__((__section__(".initcall_simple"))) = { \
+		.ptr = fn, \
+		.file = __FILE__, \
+	}
 
 void module_init_all(void);
 

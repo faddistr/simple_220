@@ -462,8 +462,14 @@ static void gatts_init(void)
     char *ssid = var_get("WIFI_CLIENT_SSID");
 	if (ssid)
 	{
-		snprintf((char *)ssid_value, sizeof(ssid_value), "%s", ssid);
 		free(ssid);
+//TODO Not a good solution, but need some RAM for camera
+#if NO_BUTTONS == 1
+        ESP_LOGI(TAG, "Config was set. Stop.");
+        return;
+#else
+    snprintf((char *)ssid_value, sizeof(ssid_value), "%s", ssid);
+#endif
 	}
 
     ESP_ERROR_CHECK(esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT));
@@ -517,6 +523,7 @@ static void gatts_init(void)
     }
 }
 
+#if NO_BUTTONS == 0
 static void buttons_event_handler(void *ctx, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
 	static bool is_started = false;
@@ -535,3 +542,6 @@ static void gatts_module_init(void)
 }
 
 module_init(gatts_module_init);
+#else
+module_init(gatts_init);
+#endif /* #if NO_BUTTONS == 0 */

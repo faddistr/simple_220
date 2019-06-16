@@ -12,7 +12,9 @@
 static const char *TAG="TELEGRAM_MANAGER";
 static void *teleCtx;
 static void *adminList;
+//static char *reserve_mem;
 ESP_EVENT_DEFINE_BASE(TELEGRAM_BASE);
+//#define TELEGRAM_RESERVE_MEM (64 * 1024U)
 
 static void telegram_new_message(void *teleCtx, telegram_update_t *info)
 {
@@ -207,6 +209,9 @@ static void ip_event_handler(void *ctx, esp_event_base_t event_base, int32_t eve
                     ESP_LOGI(TAG, "Message limit: %d", telegram_message_limit);
                 }
 
+                ESP_LOGI(TAG, "Returning reserved mem to pool!");
+               // free(reserve_mem);
+               // reserve_mem = NULL;
                 teleCtx = telegram_init(telegram_token, telegram_message_limit, telegram_new_obj);
                 free(telegram_token);
 
@@ -248,6 +253,7 @@ static void telegram_manager_init(void)
 {
 	char *telegram_disable = var_get("TELEGRAM_DISABLE");
 
+
 	if (telegram_disable != NULL)
 	{
 		if (!strcmp(telegram_disable, "1"))
@@ -260,6 +266,16 @@ static void telegram_manager_init(void)
 	ESP_LOGI(TAG, "Telegram module init...");
 	free(telegram_disable);
 
+    ESP_LOGI(TAG, "Reserving 17KiB of mem");
+
+    //MBETLS requires 17KiB array. Hack!
+    /*reserve_mem = calloc(1, TELEGRAM_RESERVE_MEM);
+    if (reserve_mem == NULL)
+    {
+        ESP_LOGE(TAG, "Failed!");
+        return;
+    }
+*/
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, ESP_EVENT_ANY_ID, ip_event_handler, NULL));
 }
 
@@ -276,7 +292,7 @@ static void cmd_telegram_alist_add(const char *cmd_name, cmd_additional_info_t *
         return;
     }
 
-    if (chat_id != '\0')
+    if (*chat_id != '\0')
     {
         sscanf(chat_id + 1, "%lf", &hlp.id);
     }
@@ -341,7 +357,7 @@ static void cmd_telegram_alist_del(const char *cmd_name, cmd_additional_info_t *
         return;
     }
 
-    if (chat_id == '\0')
+    if (*chat_id == '\0')
     {
         telegram_send_text_message(evt->ctx, evt->chat_id, "Usage: alistd $chat_id");    
         return;

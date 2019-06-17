@@ -12,9 +12,7 @@
 static const char *TAG="TELEGRAM_MANAGER";
 static void *teleCtx;
 static void *adminList;
-//static char *reserve_mem;
 ESP_EVENT_DEFINE_BASE(TELEGRAM_BASE);
-//#define TELEGRAM_RESERVE_MEM (64 * 1024U)
 
 static void telegram_new_message(void *teleCtx, telegram_update_t *info)
 {
@@ -208,10 +206,6 @@ static void ip_event_handler(void *ctx, esp_event_base_t event_base, int32_t eve
                     free(telegram_message_limit_str);
                     ESP_LOGI(TAG, "Message limit: %d", telegram_message_limit);
                 }
-
-                ESP_LOGI(TAG, "Returning reserved mem to pool!");
-               // free(reserve_mem);
-               // reserve_mem = NULL;
                 teleCtx = telegram_init(telegram_token, telegram_message_limit, telegram_new_obj);
                 free(telegram_token);
 
@@ -266,16 +260,6 @@ static void telegram_manager_init(void)
 	ESP_LOGI(TAG, "Telegram module init...");
 	free(telegram_disable);
 
-    ESP_LOGI(TAG, "Reserving 17KiB of mem");
-
-    //MBETLS requires 17KiB array. Hack!
-    /*reserve_mem = calloc(1, TELEGRAM_RESERVE_MEM);
-    if (reserve_mem == NULL)
-    {
-        ESP_LOGE(TAG, "Failed!");
-        return;
-    }
-*/
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, ESP_EVENT_ANY_ID, ip_event_handler, NULL));
 }
 

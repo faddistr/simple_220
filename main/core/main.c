@@ -42,7 +42,7 @@ void simple_start(void)
         .queue_size = CONFIG_SYSTEM_EVENT_QUEUE_SIZE,
         .task_name = "simple_evt_loop",
         .task_priority = ESP_TASKD_EVENT_STACK,
-        .task_stack_size = 8192,
+        .task_stack_size = 4096,
         .task_core_id = 0
     };
 

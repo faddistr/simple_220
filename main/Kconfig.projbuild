@@ -1,4 +1,4 @@
-menu "Example configuration"
+menu "Camera configuration"
 
 config XCLK_FREQ
   int "XCLK Frequency"

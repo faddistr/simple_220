@@ -1,23 +1,20 @@
-#include <esp_event_loop.h>
+#include <string.h>
 #include <esp_log.h>
 #include <esp_system.h>
-#include <nvs_flash.h>
 #include <sys/param.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-
-#include "driver/sdmmc_host.h"
-#include "driver/sdmmc_defs.h"
-#include "sdmmc_cmd.h"
-#include "esp_vfs_fat.h"
 #include "esp_camera.h"
 #include "module.h"
-#include "telegram.h"
+#include "telegram_events.h"
+#include "ram_var_stor.h"
+#include "cmd_executor.h"
 
 static const char *TAG = "camera";
 
-static camera_config_t camera_config = {
+
+static const camera_config_t camera_config = {
     .pin_pwdn = -1,
     .pin_reset = CONFIG_RESET,
     .pin_xclk = CONFIG_XCLK,
@@ -61,32 +58,79 @@ static esp_err_t init_camera(void)
   return ESP_OK;
 }
 
-static void init_sdcard(void)
+static uint32_t load_photo_cb(telegram_data_event_t evt, void *teleCtx_ptr, void *ctx, void *evt_data)
+{    
+    switch (evt)
+    {
+        case TELEGRAM_READ_DATA:   
+            ESP_LOGI(TAG, "TELEGRAM_READ_DATA");
+            {
+              camera_fb_t *pic = (camera_fb_t *)ctx;
+              telegram_write_data_evt_t *write_data = (telegram_write_data_evt_t *)evt_data;
+              uint32_t part_size = write_data->pice_size;
+
+              if (write_data->offset >= pic->len)
+              {
+                return 0;
+              }
+
+              if (part_size > (pic->len - write_data->offset))
+              {
+                  part_size = (pic->len - write_data->offset);
+              }
+
+              memcpy(write_data->buf, &pic->buf[write_data->offset], part_size);
+
+              return part_size;
+            }
+            break;
+
+        case TELEGRAM_RESPONSE:
+            ESP_LOGI(TAG, "TELEGRAM_RESPONSE");
+            break; 
+
+        case TELEGRAM_WRITE_DATA:
+            ESP_LOGI(TAG, "TELEGRAM_WRITE_DATA");
+            break;
+
+        case TELEGRAM_ERR:
+            ESP_LOGE(TAG, "TELEGRAM_ERR");
+            break;
+
+        case TELEGRAM_END:
+            ESP_LOGI(TAG, "TELEGRAM_END");
+            break;
+
+        default:
+            break;
+    }
+
+    return 0;
+}
+
+static void cmd_photo_cb(const char *cmd_name, cmd_additional_info_t *info, void *private)
 {
-  esp_err_t ret = ESP_FAIL;
-  sdmmc_host_t host = SDMMC_HOST_DEFAULT();
-  sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
-  esp_vfs_fat_sdmmc_mount_config_t mount_config = {
-      .format_if_mount_failed = false,
-      .max_files = 3,
-  };
-  sdmmc_card_t *card;
+    ESP_LOGI(TAG, "Taking picture...");
+    telegram_event_msg_t *evt = ((telegram_event_msg_t *)info->cmd_data);
+    camera_fb_t *pic = esp_camera_fb_get();
+    int64_t timestamp = esp_timer_get_time();
 
-  ESP_LOGI(TAG, "Mounting SD card...");
-  ret = esp_vfs_fat_sdmmc_mount("/sdcard", &host, &slot_config, &mount_config, &card);
+    char *pic_name = malloc(17 + sizeof(int64_t));
+    sprintf(pic_name, "pic_%lli.jpg", timestamp);
 
-  if (ret == ESP_OK)
-  {
-    ESP_LOGI(TAG, "SD card mount successfully!");
-  }
-  else
-  {
-    ESP_LOGE(TAG, "Failed to mount SD card VFAT filesystem. Error: %s", esp_err_to_name(ret));
-  }
+    telegram_send_file_full(evt->ctx, evt->chat_id, pic_name, pic_name, pic->len, pic, load_photo_cb, TELEGRAM_DOCUMENT);
+    free(pic_name);
 }
 
 static void camera_init(void)
 {
+  static const cmd_command_descr_t camera_cmd[] = 
+  {
+      {
+          .name = "photo",
+          .cmd_cb = cmd_photo_cb,
+      },
+  };
   ESP_LOGI(TAG, "Init...");
   if (init_camera() != ESP_OK)
   {
@@ -94,33 +138,23 @@ static void camera_init(void)
     return;
   }
 
-  ESP_LOGE(TAG, "I have a camera!!!");
+  ESP_LOGI(TAG, "I have a camera!!!");
 
-#if 0
-  while (1)
+  var_add("HAS_CAMERA", "1");
+  if (!cmd_register_many((cmd_command_descr_t *)camera_cmd, sizeof(camera_cmd) / sizeof(camera_cmd[0])))
   {
-    ESP_LOGI(TAG, "Taking picture...");
-    camera_fb_t *pic = esp_camera_fb_get();
-    int64_t timestamp = esp_timer_get_time();
-
-    char *pic_name = malloc(17 + sizeof(int64_t));
-    sprintf(pic_name, "/sdcard/pic_%lli.jpg", timestamp);
-    FILE *file = fopen(pic_name, "w");
-    if (file != NULL)
-    {
-      size_t err = fwrite(pic->buf, 1, pic->len, file);
-      ESP_LOGI(TAG, "File saved: %s", pic_name);
-    }
-    else
-    {
-      ESP_LOGE(TAG, "Could not open file =(");
-    }
-    fclose(file);
-    free(pic_name);
-
-    vTaskDelay(20000 / portTICK_RATE_MS);
+      ESP_LOGE(TAG, "Failed to add commands");
   }
-#endif
 }
 
-module_init(camera_init);
+static void event_handler(void *ctx, esp_event_base_t event_base, int32_t event_id, void *event_data)
+{
+  camera_init();
+}
+
+static void module_camera_init(void)
+{
+  ESP_ERROR_CHECK(esp_event_handler_register_with(simple_loop_handle, MODULE_BASE, MODULE_EVENT_DONE, event_handler, NULL));
+}
+
+module_init(module_camera_init);

@@ -232,7 +232,8 @@ static esp_err_t camera_fb_init(size_t count)
     _fb2->size = s_state->fb_size;
     if (s_state->config.pixel_format == PIXFORMAT_JPEG)
     {
-      _fb2->buf = (uint8_t *)calloc(_fb2->size, 1);
+      _fb2->buf = (uint8_t *)malloc(_fb2->size);
+      memset(_fb2->buf, 0x00, _fb2->size);
     }
     if (!_fb2->buf)
     {

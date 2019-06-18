@@ -118,7 +118,7 @@ static void cmd_photo_cb(const char *cmd_name, cmd_additional_info_t *info, void
     char *pic_name = malloc(17 + sizeof(int64_t));
     sprintf(pic_name, "pic_%lli.jpg", timestamp);
 
-    telegram_send_file_full(evt->ctx, evt->chat_id, pic_name, pic_name, pic->len, pic, load_photo_cb, TELEGRAM_DOCUMENT);
+    telegram_send_file_full(evt->ctx, evt->chat_id, pic_name, pic_name, pic->len, pic, load_photo_cb, TELEGRAM_PHOTO);
     free(pic_name);
 }
 

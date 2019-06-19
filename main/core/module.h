@@ -20,7 +20,8 @@ typedef struct
 void module_init_all(void);
 
 enum {                                      
-    MODULE_EVENT_DONE,                     
+    MODULE_EVENT_DONE,
+    MODULE_EVENT_OTA,                     
 };
 
 ESP_EVENT_DECLARE_BASE(MODULE_BASE);

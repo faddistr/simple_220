@@ -340,6 +340,10 @@ static ioFile_helper_t *receive_fw(telegram_event_file_t *evt)
         return NULL;
     }
 
+    ESP_ERROR_CHECK(esp_event_post_to(simple_loop_handle, MODULE_BASE, MODULE_EVENT_OTA, 
+        &evt->file_size, sizeof(evt->file_size), portMAX_DELAY));
+
+
     hnd = (ioFile_helper_t *)calloc(sizeof(ioFile_helper_t), 1);
     if (hnd == NULL)
     {

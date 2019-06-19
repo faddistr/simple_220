@@ -10,6 +10,7 @@
 #include "telegram_events.h"
 #include "ram_var_stor.h"
 #include "cmd_executor.h"
+#include "jpg_streamer.h"
 
 static const char *TAG = "camera";
 
@@ -120,6 +121,48 @@ static void cmd_photo_cb(const char *cmd_name, cmd_additional_info_t *info, void
 
     telegram_send_file_full(evt->ctx, evt->chat_id, pic_name, pic_name, pic->len, pic, load_photo_cb, TELEGRAM_PHOTO);
     free(pic_name);
+    esp_camera_fb_return(pic);
+}
+
+static httpd_handle_t streamer;
+
+
+static void cmd_mjpg_start_cb(const char *cmd_name, cmd_additional_info_t *info, void *private)
+{
+
+    telegram_event_msg_t *evt = ((telegram_event_msg_t *)info->cmd_data);
+
+    if (streamer != NULL)
+    {
+      telegram_send_text_message(evt->ctx, evt->chat_id, "Already started");
+      return;
+    }
+
+
+    streamer = mjpg_start_webserver();
+    if (streamer == NULL)
+    {
+      telegram_send_text_message(evt->ctx, evt->chat_id, "Failed to start: no memory");
+      return;
+    }
+
+    telegram_send_text_message(evt->ctx, evt->chat_id, "Started!");
+}
+
+static void cmd_mjpg_stop_cb(const char *cmd_name, cmd_additional_info_t *info, void *private)
+{
+    telegram_event_msg_t *evt = ((telegram_event_msg_t *)info->cmd_data);
+
+    if (streamer == NULL)
+    {
+      telegram_send_text_message(evt->ctx, evt->chat_id, "Already stopped");
+      return;
+    }
+
+    mjpg_stop_webserver(streamer);
+    streamer = NULL;
+
+    telegram_send_text_message(evt->ctx, evt->chat_id, "Stopped!");
 }
 
 static void camera_init(void)
@@ -130,6 +173,14 @@ static void camera_init(void)
           .name = "photo",
           .cmd_cb = cmd_photo_cb,
       },
+      {
+          .name = "mjpg_start",
+          .cmd_cb = cmd_mjpg_start_cb,
+      },
+      {
+          .name = "mjpg_stop",
+          .cmd_cb = cmd_mjpg_stop_cb,
+      }
   };
   ESP_LOGI(TAG, "Init...");
   if (init_camera() != ESP_OK)
@@ -149,12 +200,31 @@ static void camera_init(void)
 
 static void event_handler(void *ctx, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
-  camera_init();
+  switch (event_id)
+  {
+    case MODULE_EVENT_DONE:
+      camera_init();
+      break;
+
+    case MODULE_EVENT_OTA:
+      ESP_LOGI(TAG, "Stopping camera!");
+      if (streamer != NULL)
+      {
+          mjpg_stop_webserver(streamer);
+          streamer = NULL;
+      }
+      esp_camera_deinit();
+      break;
+
+    default:
+      break;
+  }
+ 
 }
 
 static void module_camera_init(void)
 {
-  ESP_ERROR_CHECK(esp_event_handler_register_with(simple_loop_handle, MODULE_BASE, MODULE_EVENT_DONE, event_handler, NULL));
+  ESP_ERROR_CHECK(esp_event_handler_register_with(simple_loop_handle, MODULE_BASE, ESP_EVENT_ANY_ID, event_handler, NULL));
 }
 
 module_init(module_camera_init);

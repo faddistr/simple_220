@@ -6,6 +6,8 @@
 #include "freertos/queue.h"
 #include "buttons_evt.h"
 
+#if NO_BUTTONS == 0
+
 #define CONFIG_BUTTON 25U
 static const char *TAG="BTN";
 
@@ -37,7 +39,7 @@ static void btn_task(void* arg)
 
     for(;;) {
         if(xQueueReceive(gpio_evt_queue, &val, portMAX_DELAY)) {
-            if (prev_val != val->val)
+            if (prev_val != val->val) //TODO need some enchancments
             {
             	ESP_LOGI(TAG, "GPIO[%d] intr, val: %d",val->num, val->val);
             	prev_val = val->val;
@@ -80,3 +82,4 @@ static void buttons_init(void)
 }
 
 module_init(buttons_init);
+#endif /* #if NO_BUTTONS == 0 */

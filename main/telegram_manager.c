@@ -206,7 +206,6 @@ static void ip_event_handler(void *ctx, esp_event_base_t event_base, int32_t eve
                     free(telegram_message_limit_str);
                     ESP_LOGI(TAG, "Message limit: %d", telegram_message_limit);
                 }
-
                 teleCtx = telegram_init(telegram_token, telegram_message_limit, telegram_new_obj);
                 free(telegram_token);
 
@@ -248,6 +247,7 @@ static void telegram_manager_init(void)
 {
 	char *telegram_disable = var_get("TELEGRAM_DISABLE");
 
+
 	if (telegram_disable != NULL)
 	{
 		if (!strcmp(telegram_disable, "1"))
@@ -276,7 +276,7 @@ static void cmd_telegram_alist_add(const char *cmd_name, cmd_additional_info_t *
         return;
     }
 
-    if (chat_id != '\0')
+    if (*chat_id != '\0')
     {
         sscanf(chat_id + 1, "%lf", &hlp.id);
     }
@@ -341,7 +341,7 @@ static void cmd_telegram_alist_del(const char *cmd_name, cmd_additional_info_t *
         return;
     }
 
-    if (chat_id == '\0')
+    if (*chat_id == '\0')
     {
         telegram_send_text_message(evt->ctx, evt->chat_id, "Usage: alistd $chat_id");    
         return;

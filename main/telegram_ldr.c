@@ -340,6 +340,10 @@ static ioFile_helper_t *receive_fw(telegram_event_file_t *evt)
         return NULL;
     }
 
+    ESP_ERROR_CHECK(esp_event_post_to(simple_loop_handle, MODULE_BASE, MODULE_EVENT_OTA, 
+        &evt->file_size, sizeof(evt->file_size), portMAX_DELAY));
+
+
     hnd = (ioFile_helper_t *)calloc(sizeof(ioFile_helper_t), 1);
     if (hnd == NULL)
     {
@@ -397,7 +401,7 @@ static void receive_file(telegram_event_file_t * evt)
     char *file_id = (char *)&evt->blob[evt->id_str_offset];
     char *caption = (char *)&evt->blob[evt->caption_str_offset];
 
-    if (caption == '\0')
+    if (*caption == '\0')
     {
         return;
     }
@@ -467,7 +471,7 @@ static void cmd_getpath(const char *cmd_name, cmd_additional_info_t *info, void 
     telegram_event_msg_t *evt = (telegram_event_msg_t *)info->cmd_data;
     char *file_id = (char *)&evt->text[strlen(cmd_name)];
 
-    if (file_id == '\0')
+    if (*file_id == '\0')
     {
          telegram_send_text_message(info->arg, evt->chat_id, "Wrong args");
          return;

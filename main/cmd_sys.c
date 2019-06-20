@@ -10,6 +10,7 @@
 #include "telegram_events.h"
 #include "config.h"
 #include "module.h"
+#include "partcl.h"
 
 static const char *TAG="C_SYS";
 
@@ -210,6 +211,25 @@ static void cmd_reset_cb(const char *cmd_name, cmd_additional_info_t *info, void
 	esp_restart();
 }
 
+static void cmd_tcl_cb(const char *cmd_name, cmd_additional_info_t *info, void *private)
+{
+	char tmp[64] = "Err!";
+	struct tcl tcl;
+	telegram_event_msg_t *evt = (telegram_event_msg_t *)info->cmd_data;
+ 	char *s = strchr(evt->text,  ' ');
+
+ 	if (s == NULL)
+ 	{
+ 		return;
+ 	}
+
+	tcl_init(&tcl);
+	if (tcl_eval(&tcl, s, strlen(s)) != FERROR) {
+	    snprintf(tmp, sizeof(tmp), "%.*s", tcl_length(tcl.result), tcl_string(tcl.result));
+	}
+	tcl_destroy(&tcl);
+	telegram_send_text_message(info->arg, evt->chat_id,  tmp);
+}
 
 cmd_register_static({
 	{
@@ -245,5 +265,9 @@ cmd_register_static({
 	{
 		.name = "Reset",
 		.cmd_cb = cmd_reset_cb,
+	},
+	{
+		.name = "$",
+		.cmd_cb = cmd_tcl_cb,
 	},
 });

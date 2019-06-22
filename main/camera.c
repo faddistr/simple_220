@@ -46,6 +46,9 @@ static const camera_config_t camera_config = {
     .fb_count = 1       //if more than one, i2s runs in continuous mode. Use only with JPEG
 };
 
+static httpd_handle_t streamer;
+
+
 static esp_err_t init_camera(void)
 {
   //initialize the camera
@@ -116,7 +119,7 @@ static void cmd_photo_cb(const char *cmd_name, cmd_additional_info_t *info, void
     camera_fb_t *pic = esp_camera_fb_get();
     int64_t timestamp = esp_timer_get_time();
 
-    char *pic_name = malloc(17 + sizeof(int64_t));
+    char *pic_name = malloc(32);
     sprintf(pic_name, "pic_%lli.jpg", timestamp);
 
     telegram_send_file_full(evt->ctx, evt->chat_id, pic_name, pic_name, pic->len, pic, load_photo_cb, TELEGRAM_PHOTO);
@@ -124,7 +127,6 @@ static void cmd_photo_cb(const char *cmd_name, cmd_additional_info_t *info, void
     esp_camera_fb_return(pic);
 }
 
-static httpd_handle_t streamer;
 
 
 static void cmd_mjpg_start_cb(const char *cmd_name, cmd_additional_info_t *info, void *private)

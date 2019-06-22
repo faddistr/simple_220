@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <esp_log.h>
 #include <esp_system.h>
+#include <esp_heap_caps.h>
 #include "ram_var_stor.h"
 #include "cmd_executor.h"
 #include "telegram.h"
@@ -231,6 +232,17 @@ static void cmd_tcl_cb(const char *cmd_name, cmd_additional_info_t *info, void *
 	telegram_send_text_message(info->arg, evt->chat_id,  tmp);
 }
 
+static void cmd_mem_cb(const char *cmd_name, cmd_additional_info_t *info, void *private)
+{
+	telegram_event_msg_t *evt = (telegram_event_msg_t *)info->cmd_data;
+	telegram_send_text(info->arg, evt->chat_id, NULL, "Free mem: %d bytes.\n"
+													  "Largest block %d bytes.\n", 
+													  heap_caps_get_free_size(MALLOC_CAP_8BIT), 
+													  heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+
+}
+
+
 cmd_register_static({
 	{
 		.name = "GetVar",
@@ -269,5 +281,9 @@ cmd_register_static({
 	{
 		.name = "$",
 		.cmd_cb = cmd_tcl_cb,
+	},
+	{
+		.name = "STAT",
+		.cmd_cb = cmd_mem_cb,
 	},
 });

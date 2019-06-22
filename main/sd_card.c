@@ -238,7 +238,7 @@ static void redirect_log(void)
   vSemaphoreCreateBinary(ctx->sem);
   xTimerStart(ctx->timer, 0);
 
-  xTaskCreate(&redirect_log_task, "LogSave_task", 2048,  ctx, 1, &ctx->task);  
+  xTaskCreatePinnedToCore(&redirect_log_task, "LogSave_task", 2048,  ctx, 1, &ctx->task, 1);  
 }
 
 

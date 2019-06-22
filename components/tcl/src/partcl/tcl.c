@@ -584,6 +584,76 @@ static int tcl_cmd_math(struct tcl *tcl, tcl_value_t *args, void *arg) {
   tcl_free(bval);
   return tcl_result(tcl, FNORMAL, tcl_alloc(p, strlen(p)));
 }
+
+static int tcl_cmd_math_adv(struct tcl *tcl, tcl_value_t *args, void *arg) {
+  (void)arg;
+  char buf[64];
+  tcl_value_t *opval = tcl_list_at(args, 2);
+  tcl_value_t *aval = tcl_list_at(args, 1);
+  tcl_value_t *bval = tcl_list_at(args, 3);
+  tcl_value_t *eval = tcl_list_at(args, 4);
+  const char *op = tcl_string(opval);
+  const char *e = tcl_string(eval);
+
+
+  int a = tcl_int(aval);
+  int b = tcl_int(bval);
+  int c = 0;
+
+  if (e[0] != ')')
+  {
+    tcl_free(opval);
+    tcl_free(aval);
+    tcl_free(bval);
+    tcl_free(eval);
+    
+    return tcl_result(tcl, FERROR, tcl_alloc("", 0));
+  }
+
+  if (op[0] == '+') {
+    c = a + b;
+  } else if (op[0] == '-') {
+    c = a - b;
+  } else if (op[0] == '*') {
+    c = a * b;
+  } else if (op[0] == '/') {
+    c = a / b;
+  } else if (op[0] == '>' && op[1] == '\0') {
+    c = a > b;
+  } else if (op[0] == '>' && op[1] == '=') {
+    c = a >= b;
+  } else if (op[0] == '<' && op[1] == '\0') {
+    c = a < b;
+  } else if (op[0] == '<' && op[1] == '=') {
+    c = a <= b;
+  } else if (op[0] == '=' && op[1] == '=') {
+    c = a == b;
+  } else if (op[0] == '!' && op[1] == '=') {
+    c = a != b;
+  }
+
+
+  char *p = buf + sizeof(buf) - 1;
+  char neg = (c < 0);
+  *p-- = 0;
+  if (neg) {
+    c = -c;
+  }
+  do {
+    *p-- = '0' + (c % 10);
+    c = c / 10;
+  } while (c > 0);
+  if (neg) {
+    *p-- = '-';
+  }
+  p++;
+
+  tcl_free(opval);
+  tcl_free(aval);
+  tcl_free(bval);
+  tcl_free(eval);
+  return tcl_result(tcl, FNORMAL, tcl_alloc(p, strlen(p)));
+}
 #endif
 
 void tcl_init(struct tcl *tcl) {
@@ -606,6 +676,8 @@ void tcl_init(struct tcl *tcl) {
   for (unsigned int i = 0; i < (sizeof(math) / sizeof(math[0])); i++) {
     tcl_register(tcl, math[i], tcl_cmd_math, 3, NULL);
   }
+
+  tcl_register(tcl, "(", tcl_cmd_math_adv, 5, NULL);
 #endif
 }
 

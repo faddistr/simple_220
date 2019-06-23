@@ -7,6 +7,7 @@
 #include <esp_heap_caps.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <freertos/portable.h>
 #include "ram_var_stor.h"
 #include "cmd_executor.h"
 #include "telegram.h"
@@ -255,6 +256,7 @@ static void cmd_stat_cb(const char *cmd_name, cmd_additional_info_t *info, void 
 	vTaskGetRunTimeStats(taskstat_mem);
 	telegram_send_text(info->arg, evt->chat_id, NULL, "Free mem: %d bytes.\n"
 													  "Largest block %d bytes.\n"
+													  "Free heap: %d bytes.\n"
 													  ".........................\n"
 													  "Number of tasks: %d\n"
 													  "Task list:\n" 
@@ -264,6 +266,7 @@ static void cmd_stat_cb(const char *cmd_name, cmd_additional_info_t *info, void 
 													  "%s\n",
 													  heap_caps_get_free_size(MALLOC_CAP_8BIT), 
 													  heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+													  xPortGetFreeHeapSize(),
 													  task_num,
 													  tasklist_mem,
 													  taskstat_mem);

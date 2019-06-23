@@ -39,11 +39,8 @@ static redirect_log_t *ctx = NULL;
 
 static void sd_log_stat_cb(const char *cmd_name, cmd_additional_info_t *info, void *private)
 {
-    char tmp[64];
     telegram_event_msg_t *evt = ((telegram_event_msg_t *)info->cmd_data);
-
-    sprintf(tmp, "Current log: %s", (ctx->file == NULL)?"FAILED":ctx->file_name);
-    telegram_send_text_message(evt->ctx, evt->chat_id, tmp);
+    telegram_send_text(evt->ctx, evt->chat_id, NULL, "Current log: %s", (ctx->file == NULL)?"FAILED":ctx->file_name);
 }
 
 static uint32_t sd_file_send_cb(telegram_data_event_t evt, void *teleCtx_ptr, void *ictx, void *evt_data)
@@ -110,7 +107,7 @@ static void sd_file_get_cb(const char *cmd_name, cmd_additional_info_t *info, vo
 static int _log_vprintf(const char *fmt, va_list args) 
 {
   int ret;
-  if (!ctx && !ctx->file)
+  if (!ctx)
   {
     return 0;
   }
@@ -120,8 +117,11 @@ static int _log_vprintf(const char *fmt, va_list args)
     ESP_LOGW(TAG, "Mutex wait warn!");
   }  
 
-  vprintf(fmt, args);
-  ret = vfprintf(ctx->file, fmt, args);
+  ret = vprintf(fmt, args);
+  if (ctx->file)
+  {
+    ret = vfprintf(ctx->file, fmt, args);
+  }
   xSemaphoreGive(ctx->sem);
   return ret;
 }
@@ -153,14 +153,12 @@ static void redirect_log_task(void * param)
         ctx->file = fopen(ctx->file_name, "a"); 
         if (ctx->file == NULL)
         {
-          xSemaphoreGive(ctx->sem);
           ESP_LOGE(TAG, "Failed to open file for log!");
-          free(ctx);
-          ctx = NULL;
-          return;
+        } else
+        {
+          ctx->is_timer = false;
         }
-        xSemaphoreGive(ctx->sem);
-        ctx->is_timer = false;
+        xSemaphoreGive(ctx->sem); 
     }
 
     vTaskDelay(TIMER_INTERVAL_MSEC / 2);

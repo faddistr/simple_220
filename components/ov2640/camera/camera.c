@@ -1074,11 +1074,12 @@ esp_err_t camera_init(const camera_config_t *config)
       err = ESP_ERR_NOT_SUPPORTED;
       goto fail;
     }
+#if 1
     int qp = config->jpeg_quality;
     int compression_ratio_bound = 1;
-    if (qp > 10)
+    if (qp > 5)
     {
-      compression_ratio_bound = 16;
+      compression_ratio_bound = 3 * qp;
     }
     else if (qp > 5)
     {
@@ -1088,10 +1089,26 @@ esp_err_t camera_init(const camera_config_t *config)
     {
       compression_ratio_bound = 4;
     }
+#else
+      int qp = config->jpeg_quality;
+      int compression_ratio_bound;
+      if (qp >= 30) {
+          compression_ratio_bound = 5;
+      } else if (qp >= 10) {
+          compression_ratio_bound = 10;
+      } else {
+          compression_ratio_bound = 20;
+      }
+#endif
     (*s_state->sensor.set_quality)(&s_state->sensor, qp);
     s_state->in_bytes_per_pixel = 2;
     s_state->fb_bytes_per_pixel = 2;
+#if 1
     s_state->fb_size = (s_state->width * s_state->height * s_state->fb_bytes_per_pixel) / compression_ratio_bound;
+#else
+    size_t equiv_line_count = s_state->height / compression_ratio_bound;
+    s_state->fb_size = s_state->width * equiv_line_count * s_state->fb_bytes_per_pixel;
+#endif
     s_state->dma_filter = &dma_filter_jpeg;
     s_state->sampling_mode = SM_0A00_0B00;
   }

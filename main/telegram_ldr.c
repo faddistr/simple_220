@@ -1,4 +1,5 @@
 #include <freertos/FreeRTOS.h>
+#include <freertos/tasks.h>
 #include <esp_log.h>
 #include <esp_event.h>
 #include <esp_ota_ops.h>
@@ -342,6 +343,8 @@ static ioFile_helper_t *receive_fw(telegram_event_file_t *evt)
 
     ESP_ERROR_CHECK(esp_event_post_to(simple_loop_handle, MODULE_BASE, MODULE_EVENT_OTA, 
         &evt->file_size, sizeof(evt->file_size), portMAX_DELAY));
+
+    vTaskDelay(1000);
 
 
     hnd = (ioFile_helper_t *)calloc(sizeof(ioFile_helper_t), 1);

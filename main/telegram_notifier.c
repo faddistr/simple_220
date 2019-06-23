@@ -121,7 +121,7 @@ static void telegram_notifier_send_event(event_to_send_t *event)
 	char tmp[64];
 
 	snprintf(tmp, 64, "EVT = %d ID = %d", (uint32_t)event->base, (uint32_t)event->id);
-	telegram_notifier_send_for_all(tmp);
+//	telegram_notifier_send_for_all(tmp);
 }
 
 static void all_event_handler(void *ctx, esp_event_base_t event_base, int32_t event_id, void *event_data)

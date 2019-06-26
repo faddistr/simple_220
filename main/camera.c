@@ -3,8 +3,8 @@
 #include <esp_system.h>
 #include <sys/param.h>
 
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 #include "esp_camera.h"
 #include "module.h"
 #include "telegram_events.h"
@@ -42,7 +42,7 @@ static const camera_config_t camera_config = {
     .pixel_format = PIXFORMAT_JPEG, //YUV422,GRAYSCALE,RGB565,JPEG
     .frame_size = FRAMESIZE_SVGA,   //QQVGA-UXGA Do not use sizes above QVGA when not JPEG
 
-    .jpeg_quality = 11, //0-63 lower number means higher quality
+    .jpeg_quality = 10, //0-63 lower number means higher quality
     .fb_count = 1       //if more than one, i2s runs in continuous mode. Use only with JPEG
 };
 

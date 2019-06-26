@@ -14,7 +14,7 @@ static void *teleCtx;
 static void *adminList;
 ESP_EVENT_DEFINE_BASE(TELEGRAM_BASE);
 
-static void telegram_new_message(void *teleCtx, telegram_update_t *info)
+static void telegram_new_message(void *teleCtx, telegram_update_t *info, bool chan)
 {
     uint32_t size_required;
     telegram_chat_message_t *msg = telegram_get_message(info);
@@ -44,12 +44,14 @@ static void telegram_new_message(void *teleCtx, telegram_update_t *info)
     }
 
     ESP_ERROR_CHECK(esp_event_post_to(simple_loop_handle, TELEGRAM_BASE, 
-        TELEGRAM_MESSAGE, event_msg, sizeof(telegram_event_msg_t) + strlen(msg->text) + 1, portMAX_DELAY));
+        (chan ? TELEGRAM_CHAN_MESSAGE : TELEGRAM_MESSAGE), 
+        event_msg, sizeof(telegram_event_msg_t) + strlen(msg->text) + 1, 
+        portMAX_DELAY));
 
     free(event_msg);
 }
 
-static void telegram_new_file(void *teleCtx, telegram_update_t *info)
+static void telegram_new_file(void *teleCtx, telegram_update_t *info, bool chan)
 {
     telegram_event_file_t *event_file;
     telegram_chat_message_t *msg = telegram_get_message(info);
@@ -114,12 +116,12 @@ static void telegram_new_file(void *teleCtx, telegram_update_t *info)
         file->id, file->name, file->mime_type, file->file_size, event_file->chat_id);
 
     ESP_ERROR_CHECK(esp_event_post_to(simple_loop_handle, TELEGRAM_BASE, 
-        TELEGRAM_FILE, event_file, data_size + sizeof(telegram_event_file_t), portMAX_DELAY));
+        (chan ? TELEGRAM_CHAN_FILE : TELEGRAM_FILE ), event_file, data_size + sizeof(telegram_event_file_t), portMAX_DELAY));
 
     free(event_file);
 }
 
-static void telegram_new_cbquery(void *teleCtx, telegram_update_t *info)
+static void telegram_new_cbquery(void *teleCtx, telegram_update_t *info, bool chan)
 {
     uint32_t offset = 0;
     uint32_t data_size = 0;
@@ -127,7 +129,8 @@ static void telegram_new_cbquery(void *teleCtx, telegram_update_t *info)
     telegram_chat_callback_t  *cb = (telegram_chat_callback_t *)info->callback_query;
 
     if (info->callback_query == NULL)
-    {        return;
+    {
+        return;
     }
 
     data_size = sizeof(telegram_event_cb_query_t) + strlen(cb->id) + 1 + strlen(cb->data) + 1;
@@ -149,36 +152,54 @@ static void telegram_new_cbquery(void *teleCtx, telegram_update_t *info)
     memcpy(&query->blob[query->data_str_offset], cb->data, strlen(cb->data) + 1);
 
     ESP_ERROR_CHECK(esp_event_post_to(simple_loop_handle, TELEGRAM_BASE, 
-        TELEGRAM_CBQUERY, query, data_size, portMAX_DELAY));
+        (chan? TELEGRAM_CHAN_CBQUERY : TELEGRAM_CBQUERY ), query, data_size, portMAX_DELAY));
 
     free(query);
 }
 
 static void telegram_new_obj(void *teleCtx, telegram_update_t *info)
 {
+    bool chan = false;
+    telegram_cclist_search_helper_t hlp = {};
+
+
     /* telegram_update_t type is not compatible with esp_event_loop */
     if ((info == NULL) || (teleCtx == NULL))
     {
         return;
     }
-
-    if (adminList)
+    
+    hlp.id = telegram_get_user_id_update(info);
+    if ( hlp.id != -1 )
     {
-        telegram_cclist_search_helper_t hlp = {};
-
-        hlp.id = telegram_get_user_id_update(info);
-        telegram_cclist_search(adminList, &hlp);
-        if (!hlp.present)
+        if (adminList)
         {
-            ESP_LOGW(TAG, "REJECTED FROM: %.0lf", hlp.id);
+            telegram_cclist_search(adminList, &hlp);
+            if (!hlp.present)
+            {
+                ESP_LOGW(TAG, "REJECTED FROM: %.0lf", hlp.id);
+                return;
+            }
+        }
+
+    } else
+    {
+        hlp.id = telegram_get_chat_id(telegram_get_message(info));
+
+        if (hlp.id == -1)
+        {
+            ESP_LOGE(TAG, "Message is not from user or channel!");
             return;
         }
-    }
 
-    telegram_new_message(teleCtx, info);
-    telegram_new_file(teleCtx, info);
-    telegram_new_cbquery(teleCtx, info);
-    
+        chan = true;
+    }    
+
+    ESP_LOGI(TAG, "Message from: %.0lf (%s)", hlp.id, chan?("channel"):("user/group"));
+
+    telegram_new_message(teleCtx, info, chan);
+    telegram_new_file(teleCtx, info, chan);
+    telegram_new_cbquery(teleCtx, info, chan);
 }
 
 static void ip_event_handler(void *ctx, esp_event_base_t event_base, int32_t event_id, void *event_data)
@@ -358,6 +379,7 @@ static void cmd_telegram_alist_del(const char *cmd_name, cmd_additional_info_t *
 
         snprintf(tmp, 32, "OK, Deleted: %s", chat_id);
         telegram_send_text_message(evt->ctx, evt->chat_id, tmp);    
+        telegram_cclist_save(adminList, "TELEGRAM_ADMIN_LIST", true);
         return;
         
     } else

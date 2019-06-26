@@ -11,6 +11,7 @@
 #include "ram_var_stor.h"
 #include "cmd_executor.h"
 #include "jpg_streamer.h"
+#include "avi.h"
 
 static const char *TAG = "camera";
 
@@ -167,6 +168,19 @@ static void cmd_mjpg_stop_cb(const char *cmd_name, cmd_additional_info_t *info, 
     telegram_send_text_message(evt->ctx, evt->chat_id, "Stopped!");
 }
 
+static void cmd_avii_test_cb(const char *cmd_name, cmd_additional_info_t *info, void *private)
+{
+    telegram_event_msg_t *evt = ((telegram_event_msg_t *)info->cmd_data);
+
+    if (gen_avi_file("/sdcard/t.avi", 10, 10) != ESP_OK)
+    {
+        telegram_send_text_message(evt->ctx, evt->chat_id, "Failed!");
+        return;
+    }
+
+    telegram_send_text_message(evt->ctx, evt->chat_id, "OK!");
+}
+
 static void camera_init(void)
 {
   static const cmd_command_descr_t camera_cmd[] = 
@@ -182,7 +196,11 @@ static void camera_init(void)
       {
           .name = "mjpg_stop",
           .cmd_cb = cmd_mjpg_stop_cb,
-      }
+      },
+      {
+          .name = "avii_test",
+          .cmd_cb = cmd_avii_test_cb,
+      },
   };
   ESP_LOGI(TAG, "Init...");
   if (init_camera() != ESP_OK)

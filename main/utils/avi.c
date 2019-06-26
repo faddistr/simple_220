@@ -131,9 +131,73 @@ static const avi_hdr_stream_t avi_hdr_stream_def =
 	.movi                  = {'m', 'o', 'v', 'i'},
 };
 
-esp_err_t gen_avi_file(const char *fname, uint32_t dur_secs, uint32_t frm_per_sec)
+typedef struct 
 {
 	FILE *fp;
+	bool is_timer;
+	TaskHandle_t task;	
+	uint32_t count;
+	uint32_t delay;
+} avii_t;
+
+static void avi_timer_cb(TimerHandle_t pxTimer) 
+{
+	avii_t *avii = (avii_t *)pvTimerGetTimerID(pxTimer);
+	avii->is_timer = true;
+}
+
+
+static void avi_task(void * param)
+{
+	avii_t *avii = (avii_t *)param;
+	TaskHandle_t task = avii->task;
+	TimerHandle_t timer = xTimerCreate("AviiTimer", avii->delay / portTICK_RATE_MS,
+        	pdTRUE, avii, avi_timer_cb);
+
+	xTimerStart(timer, 0);
+	while(avii->count)
+	{
+		if (avii->is_timer)
+		{
+			camera_fb_t *fb = NULL;
+
+			if (fwrite(avi_video_chunk_hdr, sizeof(avi_video_chunk_hdr), 1, avii->fp) != 1)
+			{
+				ESP_LOGE(TAG, "Failed to write file! (1)");
+				break;
+			}
+
+			fb = esp_camera_fb_get();
+			if (fwrite(&fb->len, sizeof(fb->len), 1, avii->fp) != 1)
+			{
+				esp_camera_fb_return(fb);
+				ESP_LOGE(TAG, "Failed to write file! (2)");
+				break;
+			}
+
+			if (fwrite(fb->buf, fb->len, 1, avii->fp) != 1)
+			{
+				esp_camera_fb_return(fb);
+				ESP_LOGE(TAG, "Failed to write file! (3)");
+				break;
+			}
+			esp_camera_fb_return(fb);
+			avii->is_timer = false;
+			avii->count--;
+		}
+		vTaskDelay(1);
+	}
+
+	xTimerStop(timer, 0);
+	xTimerDelete(timer, 0);
+	fclose(avii->fp);
+	free(avii);
+	vTaskDelete(task);
+}
+
+esp_err_t gen_avi_file(const char *fname, uint32_t dur_secs, uint32_t frm_per_sec)
+{
+
 	avi_hdr_stream_t *stream_hdr = NULL;
 	camera_fb_t *fb = esp_camera_fb_get();
 	avi_hdr_main_t hdr = {
@@ -144,24 +208,34 @@ esp_err_t gen_avi_file(const char *fname, uint32_t dur_secs, uint32_t frm_per_se
 		.dwWidth = fb->width,
 		.dwHeight = fb->height,
 	};
-	
-	fp = fopen(fname, "wb");
-	if (fp == NULL)   
+
+	avii_t *avii = (avii_t *)calloc(1, sizeof(avii_t));
+
+	esp_camera_fb_return(fb);
+
+	if (avii == NULL)
 	{
-		esp_camera_fb_return(fb);
+		ESP_LOGE(TAG, "No mem");
+		return ESP_FAIL;
+	}
+	
+	avii->fp = fopen(fname, "wb");
+	if (avii->fp == NULL)   
+	{
+		free(avii);
 		ESP_LOGE(TAG, "Couldn't open file");
 		return ESP_FAIL;
 	}
 
-	if (fwrite(&avi_hdr_overhead, sizeof(avi_hdr_overhead_t), 1, fp) != 1)
+	if (fwrite(&avi_hdr_overhead, sizeof(avi_hdr_overhead_t), 1, avii->fp) != 1)
 	{
-		esp_camera_fb_return(fb);
-		fclose(fp);
+		fclose(avii->fp);
+		free(avii);
 		ESP_LOGE(TAG, "Fwrite error");
 		return ESP_FAIL;
 	}
 
-	if (fwrite(&hdr, sizeof(avi_hdr_main_t), 1, fp) != 1)
+	if (fwrite(&hdr, sizeof(avi_hdr_main_t), 1, avii->fp) != 1)
 	{
 		ESP_LOGE(TAG, "Fwrite error");
 		return ESP_FAIL;
@@ -170,27 +244,31 @@ esp_err_t gen_avi_file(const char *fname, uint32_t dur_secs, uint32_t frm_per_se
 	stream_hdr = malloc(sizeof(avi_hdr_stream_t));
 	if (stream_hdr == NULL)
 	{
-		esp_camera_fb_return(fb);
-		fclose(fp);
+		free(avii);
+		fclose(avii->fp);
+		free(avii);
 		return ESP_ERR_NO_MEM;
 	}
 
 	memcpy(stream_hdr, &avi_hdr_stream_def, sizeof(avi_hdr_stream_t));
-	stream_hdr->biWidth     =  fb->width;
-	stream_hdr->biHeight    =  fb->height;
+	stream_hdr->biWidth     =  hdr.dwWidth;
+	stream_hdr->biHeight    =  hdr.dwHeight;
 	stream_hdr->dwRate      =  frm_per_sec;
 	stream_hdr->biSizeImage =  ((stream_hdr->biWidth*stream_hdr->biBitCount/8 + 3)&0xFFFFFFFC)*stream_hdr->biHeight;
-	esp_camera_fb_return(fb);
-	if (fwrite(stream_hdr, sizeof(avi_hdr_stream_t), 1, fp) != 1)
+	if (fwrite(stream_hdr, sizeof(avi_hdr_stream_t), 1, avii->fp) != 1)
 	{
 		ESP_LOGE(TAG, "Fwrite error");
 		free(stream_hdr);
-		fclose(fp);
+		fclose(avii->fp);
+		free(avii);
 		return ESP_FAIL;
 	}
-
 	free(stream_hdr);
-	fclose(fp);
 
-	return 0;
+	ESP_LOGI(TAG, "Per frame: %d FPS %d Duration: %d", hdr.dwMicroSecPerFrame, frm_per_sec, dur_secs);
+	avii->count = frm_per_sec * dur_secs;
+	avii->delay = hdr.dwMicroSecPerFrame * 1000;
+	ESP_LOGI(TAG, "Frames count: %d, Delay: %d", avii->count, avii->delay);
+	xTaskCreate(&avi_task, "avii_task", 2048, avii, 1, &avii->task);
+	return ESP_OK;
 }

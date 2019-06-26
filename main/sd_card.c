@@ -258,7 +258,7 @@ static void init_sdcard(void)
   sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
   esp_vfs_fat_sdmmc_mount_config_t mount_config = {
       .format_if_mount_failed = false,
-      .max_files = 2,
+      .max_files = 5,
   };
   sdmmc_card_t *card;
 

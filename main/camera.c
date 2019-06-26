@@ -172,13 +172,21 @@ static void cmd_avii_test_cb(const char *cmd_name, cmd_additional_info_t *info, 
 {
     telegram_event_msg_t *evt = ((telegram_event_msg_t *)info->cmd_data);
 
-    if (gen_avi_file("/sdcard/t.avi", 10, 10) != ESP_OK)
+    char *video_name = NULL;
+    int64_t timestamp = esp_timer_get_time();
+    uint32_t len = snprintf(NULL, 0, "/sdcard/%lli.avi", timestamp);
+
+    video_name = malloc(len + 1);
+    snprintf(video_name, len + 1, "/sdcard/%lli.avi", timestamp);
+
+    if (gen_avi_file(video_name, 120, 24) != ESP_OK)
     {
         telegram_send_text_message(evt->ctx, evt->chat_id, "Failed!");
         return;
     }
 
     telegram_send_text_message(evt->ctx, evt->chat_id, "OK!");
+    free(video_name);
 }
 
 static void camera_init(void)

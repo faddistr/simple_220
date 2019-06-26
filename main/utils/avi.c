@@ -9,12 +9,15 @@
 #include <freertos/timers.h>
 #include <freertos/semphr.h>
 #include <esp_log.h>
-#include "avi.h"
 #include <esp_camera.h>
+#include "avi.h"
+
 
 static const char *TAG = "AVI";
-
 const char avi_video_chunk_hdr[4] = {'0','0','w','b'};
+
+ESP_EVENT_DEFINE_BASE(AVI_BASE);
+
 typedef struct
 {
 	char dwRIFF[4];
@@ -138,6 +141,7 @@ typedef struct
 	TaskHandle_t task;	
 	uint32_t count;
 	uint32_t delay;
+	char *fname;
 } avii_t;
 
 static void avi_timer_cb(TimerHandle_t pxTimer) 
@@ -191,6 +195,10 @@ static void avi_task(void * param)
 	xTimerStop(timer, 0);
 	xTimerDelete(timer, 0);
 	fclose(avii->fp);
+	
+	ESP_ERROR_CHECK(esp_event_post_to(simple_loop_handle, AVI_BASE, 
+					AVI_FINISH, avii->fname, strlen(avii->fname) + 1, portMAX_DELAY));	
+	free(avii->fname);
 	free(avii);
 	vTaskDelete(task);
 }
@@ -265,9 +273,11 @@ esp_err_t gen_avi_file(const char *fname, uint32_t dur_secs, uint32_t frm_per_se
 	}
 	free(stream_hdr);
 
+	ESP_LOGI(TAG, "File name: %s", fname);
 	ESP_LOGI(TAG, "Per frame: %d FPS %d Duration: %d", hdr.dwMicroSecPerFrame, frm_per_sec, dur_secs);
 	avii->count = frm_per_sec * dur_secs;
-	avii->delay = hdr.dwMicroSecPerFrame * 1000;
+	avii->delay = hdr.dwMicroSecPerFrame / 1000;
+	avii->fname = strdup(fname);
 	ESP_LOGI(TAG, "Frames count: %d, Delay: %d", avii->count, avii->delay);
 	xTaskCreate(&avi_task, "avii_task", 2048, avii, 1, &avii->task);
 	return ESP_OK;

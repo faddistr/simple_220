@@ -2,6 +2,7 @@
 #include <esp_log.h>
 #include <esp_event.h>
 #include "module.h"
+#include "avi.h"
 #include "telegram_events.h"
 #include "cmd_executor.h"
 #include "ram_var_stor.h"
@@ -122,10 +123,35 @@ static void telegram_notifier_send_for_all(char *str_to_send)
 
 static void telegram_notifier_send_event(event_to_send_t *event)
 {
-	char tmp[64];
+	#define AVI_MSG_FMT "AVI generation finished, file name %s"
 
-	snprintf(tmp, 64, "EVT = %d ID = %d", (uint32_t)event->base, (uint32_t)event->id);
-	telegram_notifier_send_for_all(tmp);
+	if (event->base == AVI_BASE)
+	{
+		switch(event->id)
+		{
+			case AVI_FINISH:
+				{
+					//TODO sprintf with malloc
+					char *str = malloc(snprintf(NULL, 0, AVI_MSG_FMT, (char *)event->data));
+
+					sprintf(str, AVI_MSG_FMT, (char *)event->data);
+					telegram_notifier_send_for_all(str);
+
+					free(str);
+				}
+				break;
+			default:
+				break;	
+		}
+		
+	}
+	else
+	{
+		char tmp[64];
+
+		snprintf(tmp, 64, "EVT = %d ID = %d", (uint32_t)event->base, (uint32_t)event->id);
+		telegram_notifier_send_for_all(tmp);
+	}
 }
 
 

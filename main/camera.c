@@ -179,7 +179,7 @@ static void cmd_avii_test_cb(const char *cmd_name, cmd_additional_info_t *info, 
     video_name = malloc(len + 1);
     snprintf(video_name, len + 1, "/sdcard/%lli.avi", timestamp);
 
-    if (gen_avi_file(video_name, 120, 24) != ESP_OK)
+    if (gen_avi_file(video_name, 15, 10, false) != ESP_OK)
     {
         telegram_send_text_message(evt->ctx, evt->chat_id, "Failed!");
         return;

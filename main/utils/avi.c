@@ -142,7 +142,56 @@ typedef struct
 	uint32_t count;
 	uint32_t delay;
 	char *fname;
+	TimerHandle_t timer;
 } avii_t;
+
+static void avi_timer_work_cb(TimerHandle_t pxTimer) 
+{
+	avii_t *avii = (avii_t *)pvTimerGetTimerID(pxTimer);
+
+	do
+	{
+		camera_fb_t *fb = NULL;
+
+		if (fwrite(avi_video_chunk_hdr, sizeof(avi_video_chunk_hdr), 1, avii->fp) != 1)
+		{
+			ESP_LOGE(TAG, "Failed to write file! (1)");
+			avii->count = 0;
+			break;
+		}
+
+		fb = esp_camera_fb_get();
+		if (fwrite(&fb->len, sizeof(fb->len), 1, avii->fp) != 1)
+		{
+			esp_camera_fb_return(fb);
+			ESP_LOGE(TAG, "Failed to write file! (2)");
+			avii->count = 0;
+			break;
+		}
+
+		if (fwrite(fb->buf, fb->len, 1, avii->fp) != 1)
+		{
+			esp_camera_fb_return(fb);
+			ESP_LOGE(TAG, "Failed to write file! (3)");
+			avii->count = 0;
+			break;
+		}
+
+		esp_camera_fb_return(fb);
+		avii->count--;
+	} while (0);
+
+	if (avii->count == 0)
+	{
+		ESP_ERROR_CHECK(esp_event_isr_post_to(simple_loop_handle, AVI_BASE, 
+					AVI_FINISH, avii->fname, strlen(avii->fname) + 1, NULL));	
+		free(avii->fname);
+		free(avii);
+		xTimerStop(pxTimer, 0);
+		xTimerDelete(pxTimer, 0);
+	}
+}
+
 
 static void avi_timer_cb(TimerHandle_t pxTimer) 
 {
@@ -189,7 +238,7 @@ static void avi_task(void * param)
 			avii->is_timer = false;
 			avii->count--;
 		}
-		vTaskDelay(1);
+		//vTaskDelay(1);
 	}
 
 	xTimerStop(timer, 0);
@@ -203,14 +252,14 @@ static void avi_task(void * param)
 	vTaskDelete(task);
 }
 
-esp_err_t gen_avi_file(const char *fname, uint32_t dur_secs, uint32_t frm_per_sec)
+esp_err_t gen_avi_file(const char *fname, uint32_t dur_secs, uint32_t frm_per_sec, bool isr)
 {
 
 	avi_hdr_stream_t *stream_hdr = NULL;
 	camera_fb_t *fb = esp_camera_fb_get();
 	avi_hdr_main_t hdr = {
 		.dwMicroSecPerFrame = 1000000UL / frm_per_sec,
-		.dwMaxBytesPerSec = fb->len * frm_per_sec * 2,
+		.dwMaxBytesPerSec = fb->len * frm_per_sec * 1,
 		.dwFlags = 16, /* TODO */
 		.dwStreams = 1,
 		.dwWidth = fb->width,
@@ -276,9 +325,18 @@ esp_err_t gen_avi_file(const char *fname, uint32_t dur_secs, uint32_t frm_per_se
 	ESP_LOGI(TAG, "File name: %s", fname);
 	ESP_LOGI(TAG, "Per frame: %d FPS %d Duration: %d", hdr.dwMicroSecPerFrame, frm_per_sec, dur_secs);
 	avii->count = frm_per_sec * dur_secs;
-	avii->delay = hdr.dwMicroSecPerFrame / 1000;
+	avii->delay = hdr.dwMicroSecPerFrame / 2000;
 	avii->fname = strdup(fname);
 	ESP_LOGI(TAG, "Frames count: %d, Delay: %d", avii->count, avii->delay);
-	xTaskCreate(&avi_task, "avii_task", 2048, avii, 1, &avii->task);
+
+	if (!isr)
+	{
+		xTaskCreatePinnedToCore(&avi_task, "avii_task", 2048, avii, 1, &avii->task, 1);
+	} else
+	{
+		avii->timer = xTimerCreate("AviiTimerI", avii->delay / portTICK_RATE_MS,
+        	pdTRUE, avii, avi_timer_work_cb);
+		xTimerStart(avii->timer, 0);
+	}
 	return ESP_OK;
 }

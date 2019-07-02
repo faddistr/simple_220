@@ -8,13 +8,20 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/timers.h>
 #include <freertos/semphr.h>
+#include <freertos/task.h>
+#include <freertos/queue.h>
 #include <esp_log.h>
 #include <esp_camera.h>
+#include <esp_types.h>
+#include <driver/periph_ctrl.h>
+#include <driver/timer.h>
 #include "avi.h"
 
 
 static const char *TAG = "AVI";
 const char avi_video_chunk_hdr[4] = {'0','0','w','b'};
+
+#define AVI_ISR_TIMER TIMER_0
 
 ESP_EVENT_DEFINE_BASE(AVI_BASE);
 
@@ -142,7 +149,10 @@ typedef struct
 	uint32_t count;
 	uint32_t delay;
 	char *fname;
+	uint32_t fps;
 	TimerHandle_t timer;
+	BaseType_t woken;
+	SemaphoreHandle_t  sem;
 } avii_t;
 
 static void avi_timer_work_cb(TimerHandle_t pxTimer) 
@@ -199,18 +209,67 @@ static void avi_timer_cb(TimerHandle_t pxTimer)
 	avii->is_timer = true;
 }
 
+#define TIMER_DIVIDER         8000  //  Hardware timer clock divider
+#define TIMER_SCALE           (TIMER_BASE_CLK / TIMER_DIVIDER)  // convert counter value to seconds
+
+void IRAM_ATTR timer_group0_isr(void *para)
+{
+	avii_t *avii = (avii_t *)para;
+    TIMERG0.int_clr_timers.t0 = 1;
+    TIMERG0.hw_timer[AVI_ISR_TIMER].update = 1;
+    TIMERG0.hw_timer[AVI_ISR_TIMER].config.alarm_en = TIMER_ALARM_EN;
+
+    avii->woken = pdTRUE;
+    xSemaphoreGiveFromISR(avii->sem, &avii->woken);
+    portYIELD_FROM_ISR();
+}
+
+
+static void avi_isr_timer_init(avii_t *avii, uint64_t fps)
+{
+    /* Select and initialize basic parameters of the timer */
+    timer_config_t config;
+    config.divider = TIMER_DIVIDER;
+    config.counter_dir = TIMER_COUNT_UP;
+    config.counter_en = TIMER_PAUSE;
+    config.alarm_en = TIMER_ALARM_EN;
+    config.intr_type = TIMER_INTR_LEVEL;
+    config.auto_reload = true;
+    timer_init(TIMER_GROUP_0, AVI_ISR_TIMER, &config);
+    timer_set_counter_value(TIMER_GROUP_0, AVI_ISR_TIMER, 0x00000000ULL);
+
+    /* Configure the alarm value and the interrupt on alarm. */
+    timer_set_alarm_value(TIMER_GROUP_0, AVI_ISR_TIMER, TIMER_SCALE / fps);
+    ESP_LOGI(TAG, "ALARM VAL = %lld %d %lld", TIMER_SCALE / fps, TIMER_SCALE, fps);
+    timer_enable_intr(TIMER_GROUP_0, AVI_ISR_TIMER);
+    timer_isr_register(TIMER_GROUP_0, AVI_ISR_TIMER, timer_group0_isr, 
+        (void *) avii, ESP_INTR_FLAG_IRAM, NULL);
+
+    timer_start(TIMER_GROUP_0, AVI_ISR_TIMER);
+}
+
+
 
 static void avi_task(void * param)
 {
 	avii_t *avii = (avii_t *)param;
 	TaskHandle_t task = avii->task;
+	#if 0
 	TimerHandle_t timer = xTimerCreate("AviiTimer", avii->delay / portTICK_RATE_MS,
         	pdTRUE, avii, avi_timer_cb);
 
-	xTimerStart(timer, 0);
+	+TimerStart(timer, 0);
+	#else
+	vSemaphoreCreateBinary(avii->sem);
+	avi_isr_timer_init(avii, avii->fps);
+	#endif
 	while(avii->count)
 	{
+#if 0
 		if (avii->is_timer)
+#else
+	    if( xSemaphoreTake( avii->sem, portTICK_RATE_MS * avii->delay) == pdTRUE )
+#endif
 		{
 			camera_fb_t *fb = NULL;
 
@@ -238,11 +297,14 @@ static void avi_task(void * param)
 			avii->is_timer = false;
 			avii->count--;
 		}
-		//vTaskDelay(1);
 	}
-
+#if 0
 	xTimerStop(timer, 0);
 	xTimerDelete(timer, 0);
+#else
+	timer_pause(TIMER_GROUP_0, AVI_ISR_TIMER);
+	vSemaphoreDelete(avii->sem);
+#endif
 	fclose(avii->fp);
 	
 	ESP_ERROR_CHECK(esp_event_post_to(simple_loop_handle, AVI_BASE, 
@@ -257,10 +319,12 @@ esp_err_t gen_avi_file(const char *fname, uint32_t dur_secs, uint32_t frm_per_se
 
 	avi_hdr_stream_t *stream_hdr = NULL;
 	camera_fb_t *fb = esp_camera_fb_get();
-	avi_hdr_main_t hdr = {
+	avi_hdr_main_t 
+
+	hdr = {
 		.dwMicroSecPerFrame = 1000000UL / frm_per_sec,
 		.dwMaxBytesPerSec = fb->len * frm_per_sec * 1,
-		.dwFlags = 16, /* TODO */
+		.dwFlags = 0, /* TODO */
 		.dwStreams = 1,
 		.dwWidth = fb->width,
 		.dwHeight = fb->height,
@@ -325,10 +389,11 @@ esp_err_t gen_avi_file(const char *fname, uint32_t dur_secs, uint32_t frm_per_se
 	ESP_LOGI(TAG, "File name: %s", fname);
 	ESP_LOGI(TAG, "Per frame: %d FPS %d Duration: %d", hdr.dwMicroSecPerFrame, frm_per_sec, dur_secs);
 	avii->count = frm_per_sec * dur_secs;
-	avii->delay = hdr.dwMicroSecPerFrame / 2000;
+	avii->delay = hdr.dwMicroSecPerFrame / 1000;
 	avii->fname = strdup(fname);
+	avii->fps = frm_per_sec;
 	ESP_LOGI(TAG, "Frames count: %d, Delay: %d", avii->count, avii->delay);
-
+#if 0
 	if (!isr)
 	{
 		xTaskCreatePinnedToCore(&avi_task, "avii_task", 2048, avii, 1, &avii->task, 1);
@@ -338,5 +403,8 @@ esp_err_t gen_avi_file(const char *fname, uint32_t dur_secs, uint32_t frm_per_se
         	pdTRUE, avii, avi_timer_work_cb);
 		xTimerStart(avii->timer, 0);
 	}
+#else
+	xTaskCreatePinnedToCore(&avi_task, "avii_task", 2048, avii, 1, &avii->task, 1);
+#endif
 	return ESP_OK;
 }

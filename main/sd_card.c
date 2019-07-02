@@ -50,7 +50,7 @@ static uint32_t sd_file_send_cb(telegram_data_event_t evt, void *teleCtx_ptr, vo
     switch (evt)
     {
         case TELEGRAM_READ_DATA:   
-            ESP_LOGI(TAG, "TELEGRAM_READ_DATA");
+            //ESP_LOGI(TAG, "TELEGRAM_READ_DATA");
             return fread(write_data->buf, sizeof(uint8_t), write_data->pice_size, (FILE *)ictx);
 
         case TELEGRAM_RESPONSE:

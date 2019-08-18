@@ -43,7 +43,7 @@ static const camera_config_t camera_config = {
     .pixel_format = PIXFORMAT_JPEG, //YUV422,GRAYSCALE,RGB565,JPEG
     .frame_size = FRAMESIZE_SVGA,   //QQVGA-UXGA Do not use sizes above QVGA when not JPEG
 
-    .jpeg_quality = 10, //0-63 lower number means higher quality
+    .jpeg_quality = 15, //0-63 lower number means higher quality
     .fb_count = 1       //if more than one, i2s runs in continuous mode. Use only with JPEG
 };
 
@@ -179,13 +179,13 @@ static void cmd_avii_test_cb(const char *cmd_name, cmd_additional_info_t *info, 
     video_name = malloc(len + 1);
     snprintf(video_name, len + 1, "/sdcard/%lli.avi", timestamp);
 
-    if (gen_avi_file(video_name, 15, 10, false) != ESP_OK)
+    if (gen_avi_file(video_name, 15, 5, false) != ESP_OK)
     {
         telegram_send_text_message(evt->ctx, evt->chat_id, "Failed!");
-        return;
+    } else
+    {
+      telegram_send_text_message(evt->ctx, evt->chat_id, "OK!");
     }
-
-    telegram_send_text_message(evt->ctx, evt->chat_id, "OK!");
     free(video_name);
 }
 

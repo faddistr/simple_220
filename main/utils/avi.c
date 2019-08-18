@@ -221,6 +221,7 @@ void IRAM_ATTR timer_group0_isr(void *para)
 
     avii->woken = pdTRUE;
     xSemaphoreGiveFromISR(avii->sem, &avii->woken);
+    //avii->is_timer = true;
     portYIELD_FROM_ISR();
 }
 
@@ -404,7 +405,7 @@ esp_err_t gen_avi_file(const char *fname, uint32_t dur_secs, uint32_t frm_per_se
 		xTimerStart(avii->timer, 0);
 	}
 #else
-	xTaskCreatePinnedToCore(&avi_task, "avii_task", 2048, avii, 1, &avii->task, 1);
+	xTaskCreatePinnedToCore(&avi_task, "avii_task", 2048, avii, 1, &avii->task, 0);
 #endif
 	return ESP_OK;
 }
